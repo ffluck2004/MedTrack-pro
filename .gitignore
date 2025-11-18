@@ -1,0 +1,23 @@
+# Node
+node_modules/
+dist/
+build/
+attached_assets/
+
+# System
+.DS_Store
+
+# Django
+db.sqlite3
+__pycache__/
+*.pyc
+*.log
+
+# Python envs
+.venv-django/
+venv/
+.env
+.env.*
+
+# Local
+.local/
