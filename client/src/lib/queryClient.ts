@@ -1,6 +1,7 @@
+// /src/lib/queryClient.ts
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-const API_BASE = "http://127.0.0.1:8000/api"; // ✅ Django backend URL
+const API_BASE = "http://127.0.0.1:8000/api"; // Django API
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -10,42 +11,42 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
-// ✅ Improved request function
 export async function apiRequest(
   method: string,
   endpoint: string,
   data?: unknown
 ): Promise<any> {
-  const cleanEndpoint = endpoint.replace(/^\/?api\/?/, "");
+  const cleanEndpoint = endpoint.replace(/^\/?api\/?/, "").replace(/^\/+/, "");
   const url = `${API_BASE}/${cleanEndpoint}`;
 
   try {
+    // If method is DELETE, do NOT send a body (some backends reject bodies on DELETE)
+    const isDelete = method.toUpperCase() === "DELETE";
+
     const res = await fetch(url, {
       method,
-      headers: { "Content-Type": "application/json" },
-      body: data ? JSON.stringify(data) : undefined,
+      headers: isDelete ? undefined : { "Content-Type": "application/json" },
+      body: !isDelete && data ? JSON.stringify(data) : undefined,
       mode: "cors",
       credentials: "include",
     });
 
     await throwIfResNotOk(res);
 
-    // ✅ Handle empty body (like 201 Created with no JSON)
     const text = await res.text();
     return text ? JSON.parse(text) : {};
   } catch (err: any) {
-    console.error("🌐 Network/Fetch error:", err.message);
+    console.error("🌐 Network/Fetch error:", err?.message ?? err);
     throw new Error("Backend unreachable or invalid response");
   }
 }
 
-// ✅ For React Query fetches
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn =
   <T,>({ on401 }: { on401: UnauthorizedBehavior }): QueryFunction<T> =>
   async ({ queryKey }) => {
-    const endpoint = queryKey.join("/");
-    const cleanEndpoint = endpoint.replace(/^\/?api\/?/, "");
+    const endpoint = Array.isArray(queryKey) ? queryKey.join("/") : String(queryKey);
+    const cleanEndpoint = String(endpoint).replace(/^\/?api\/?/, "");
     const url = `${API_BASE}/${cleanEndpoint}`;
     const res = await fetch(url, { credentials: "include" });
     if (on401 === "returnNull" && res.status === 401) return null as T;
@@ -53,7 +54,6 @@ export const getQueryFn =
     return (await res.json()) as T;
   };
 
-// ✅ Global query client
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -67,15 +67,13 @@ export const queryClient = new QueryClient({
   },
 });
 
-// ✅ Extra helpers for API usage directly
+// Convenience wrappers
 export async function fetchMedicines() {
   return apiRequest("GET", "medicines/");
 }
-
 export async function fetchInventory() {
   return apiRequest("GET", "inventory/");
 }
-
 export async function fetchInvoices() {
   return apiRequest("GET", "invoices/");
 }

@@ -73,14 +73,28 @@ export default function Inventory() {
   });
 
   // Delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => apiRequest("DELETE", `medicines/${id}/`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["medicines"] });
-      setDeleteId(null);
-      setSelectedIds((prev) => prev.filter((id) => id !== deleteId));
-    },
-  });
+  // inside Inventory.tsx — update deleteMutation definition to this:
+const deleteMutation = useMutation({
+  mutationFn: async (id: string) => {
+    // NOTE: apiRequest will NOT send a body for DELETE (see updated queryClient.ts)
+    return apiRequest("DELETE", `medicines/${id}/`);
+  },
+  // variables param will be the id passed to mutate(...)
+  onSuccess: (_data, id) => {
+    // invalidate (force refetch) medicines list
+    queryClient.invalidateQueries({ queryKey: ["medicines"] });
+
+    // remove deleted id from selection and from any local UI state
+    setSelectedIds((prev) => prev.filter((sid) => sid !== (id as string)));
+    // clear modal id if it matches
+    setDeleteId((curr) => (curr === id ? null : curr));
+  },
+  onError: (err) => {
+    console.error("Delete failed:", err);
+    // Add a toast or alert here if desired
+  },
+});
+
 
   // PATCH helper used by inline edit
   const patchMedicine = useCallback(async (id: string, payload: Partial<Medicine>) => {
@@ -434,11 +448,16 @@ export default function Inventory() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deleteId && deleteMutation.mutate(deleteId)}
-            >
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+             onClick={() => {
+              if (deleteId) {
+               deleteMutation.mutate(deleteId);
+             }
+              }}
+                    >
               Delete
-            </AlertDialogAction>
+          </AlertDialogAction>
+
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
