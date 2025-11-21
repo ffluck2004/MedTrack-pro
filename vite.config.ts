@@ -11,14 +11,15 @@ export default defineConfig({
     process.env.REPL_ID !== undefined
       ? [
           await import("@replit/vite-plugin-cartographer").then((m) =>
-            m.cartographer(),
+            m.cartographer()
           ),
           await import("@replit/vite-plugin-dev-banner").then((m) =>
-            m.devBanner(),
+            m.devBanner()
           ),
         ]
       : []),
   ],
+
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),
@@ -26,29 +27,35 @@ export default defineConfig({
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
   },
+
   root: path.resolve(import.meta.dirname, "client"),
+
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
   },
 
-  // === IMPORTANT: proxy so /api calls in frontend are forwarded to Django ===
+  // 🔥🔥 FINAL WORKING PROXY FOR DJANGO 🔥🔥
   server: {
     fs: {
       strict: true,
       deny: ["**/.*"],
     },
 
-    // Add this proxy block — keeps everything else intact
     proxy: {
-      // Forward any request that starts with /api to Django on port 8000
+      // All frontend requests starting with /api → Django backend
       "/api": {
         target: "http://127.0.0.1:8000",
         changeOrigin: true,
         secure: false,
-        // optional: preserve path; default behaviour is fine
-        // rewrite: (path) => path.replace(/^\/api/, "/api"),
+        // Needed for Safari/Chrome cookie handling
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq) => {
+            proxyReq.setHeader("Origin", "http://127.0.0.1:8000");
+          });
+        },
       },
     },
   },
 });
+

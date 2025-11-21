@@ -1,6 +1,6 @@
+# api/models.py
 from django.db import models
 from django.utils import timezone
-
 
 class Supplier(models.Model):
     name = models.CharField(max_length=255)
@@ -91,6 +91,8 @@ class Invoice(models.Model):
     admin_name = models.CharField(max_length=255, blank=True, null=True)
     payment_method = models.CharField(max_length=50, default="Cash")
     status = models.CharField(max_length=50, default="Completed")
+    returned_at = models.DateTimeField(null=True, blank=True)  # new - timestamp of return (any partial return will set this)
+    # You might optionally want a returned_by field, etc.
 
     def __str__(self):
         return f"Invoice #{self.invoice_number}"
@@ -103,6 +105,7 @@ class InvoiceItem(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2)
     cost = models.DecimalField(max_digits=10, decimal_places=2)
     line_total = models.DecimalField(max_digits=12, decimal_places=2)
+    returned_quantity = models.PositiveIntegerField(default=0)  # new - how many of this item were returned
 
     def __str__(self):
         return f"{self.medicine} x {self.quantity}"
