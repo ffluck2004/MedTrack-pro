@@ -328,14 +328,10 @@ function CreateInvoiceView(props: {
       });
       if (createRes.ok) {
         const created = await createRes.json();
-        setCustomers((prev) => {
-          try {
-            const exists = prev.some((c) => c.contact === created.contact && created.contact);
-            if (exists) return prev;
-            return [...prev, created];
-          } catch {
-            return prev;
-          }
+        setCustomers((prev: { id: string | number; name: string; contact?: string | undefined; address?: string | undefined }[]) => {
+          const exists = prev.some((c) => c.contact === created.contact && created.contact);
+          if (exists) return prev;
+          return [...prev, { ...created, contact: created.contact || undefined, address: created.address || undefined }];
         });
         return created;
       } else {
@@ -608,10 +604,10 @@ function CreateInvoiceView(props: {
                     });
                     if (create.ok) {
                       const created = await create.json();
-                      setCustomers((prev) => {
+                      setCustomers((prev: { id: string | number; name: string; contact?: string | undefined; address?: string | undefined }[]) => {
                         const exists = prev.some((c) => c.contact === created.contact && created.contact);
                         if (exists) return prev;
-                        return [...prev, created];
+                        return [...prev, { ...created, contact: created.contact || undefined, address: created.address || undefined }];
                       });
                       alert("Customer saved.");
                     } else {
@@ -718,6 +714,10 @@ function InvoiceHistoryView(props: {
 
   // open view modal
   const handleView = (inv: Invoice) => {
+    if (!inv) {
+      alert("Invoice data is missing.");
+      return;
+    }
     setSelectedInvoice(inv);
     setViewOpen(true);
   };
@@ -773,7 +773,10 @@ function InvoiceHistoryView(props: {
       </Card>
 
       {/* View / Return modal */}
-      <Dialog open={viewOpen} onOpenChange={(o) => { if (!o) setSelectedInvoice(null); setViewOpen(o); }}>
+      <Dialog open={viewOpen} onOpenChange={(o) => { 
+        if (!o) setSelectedInvoice(null); 
+        setViewOpen(o); 
+      }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
@@ -804,14 +807,26 @@ function InvoiceHistoryView(props: {
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedInvoice.items.map((it, idx) => {
-                    // maximum returnable = purchased - already returned
-                    const already = safeParse(it.returned_quantity || 0);
-                    const maxReturnable = Math.max(0, safeParse(it.quantity) - already);
-                    return (
-                      <ReturnRow key={idx} item={it} maxReturnable={maxReturnable} />
-                    );
-                  })}
+                  {Array.isArray(selectedInvoice?.items) && selectedInvoice.items.length > 0
+                    ? selectedInvoice.items.map((it, idx) => {
+                        const already = safeParse(it.returned_quantity || 0);
+                        const maxReturnable = Math.max(0, safeParse(it.quantity) - already);
+
+                        return (
+                          <ReturnRow
+                            key={idx}
+                            item={it}
+                            maxReturnable={maxReturnable}
+                          />
+                        );
+                      })
+                    : (
+                      <tr>
+                        <td colSpan={5} className="text-center text-muted-foreground py-4">
+                          No items found for this invoice.
+                        </td>
+                      </tr>
+                    )}
                 </tbody>
               </table>
 
@@ -844,22 +859,34 @@ function ReturnRow({ item, maxReturnable }: { item: InvoiceItem; maxReturnable: 
   const [desired, setDesired] = useState<number>(0);
 
   useEffect(() => {
-    // keep dataset up-to-date (so parent button can scan)
-    const el = document.querySelector(`[data-invoice-item-id="${item.id}"]`);
-    if (el) el.setAttribute("data-return", String(desired));
+    // Update the `data-return` attribute on the row
+    const row = document.querySelector(`[data-invoice-item-id="${item.id}"]`);
+    if (row) {
+      row.setAttribute("data-return", String(desired));
+    }
   }, [desired, item.id]);
 
   return (
-    <tr data-invoice-item-id={item.id} data-return={String(0)}>
+    <tr data-invoice-item-id={item.id} data-return={String(desired)}>
       <td style={{ padding: "8px 6px" }}>{item.medicineName}</td>
       <td className="text-center">{item.quantity}</td>
       <td className="text-right">{formatINR(item.price)}</td>
       <td className="text-center">{item.returned_quantity ?? 0}</td>
       <td className="text-right">
         <div className="inline-flex items-center gap-2">
-          <button onClick={() => setDesired((d) => Math.max(0, d - 1))} className="px-2">-</button>
+          <button
+            onClick={() => setDesired((d) => Math.max(0, d - 1))}
+            className="px-2"
+          >
+            -
+          </button>
           <div style={{ minWidth: 28, textAlign: "center" }}>{desired}</div>
-          <button onClick={() => setDesired((d) => Math.min(maxReturnable, d + 1))} className="px-2">+</button>
+          <button
+            onClick={() => setDesired((d) => Math.min(maxReturnable, d + 1))}
+            className="px-2"
+          >
+            +
+          </button>
         </div>
       </td>
     </tr>
@@ -877,19 +904,25 @@ function ReturnSelectedButton({ invoice, onDone }: { invoice: Invoice; onDone?: 
   const [busy, setBusy] = useState(false);
 
   const handleReturn = async () => {
-    if (!invoice) return;
-    // gather rows
+    if (!invoice) {
+      alert("Invoice data is missing.");
+      return;
+    }
+
+    // Gather rows with valid attributes
     const rows = Array.from(document.querySelectorAll(`[data-invoice-item-id]`)) as HTMLElement[];
-    const itemsToReturn: { invoice_item_id?: number; quantity: number; invoice_item_local_id?: any }[] = [];
-    for (const r of rows) {
-      const parent = r.closest("tr");
-      const invId = r.getAttribute("data-invoice-item-id");
-      const ret = r.getAttribute("data-return") || "0";
-      const qty = Math.max(0, Math.floor(Number(ret) || 0));
-      if (qty > 0) {
-        itemsToReturn.push({ invoice_item_id: invId ? Number(invId) : undefined, quantity: qty });
+    const itemsToReturn: { invoice_item_id: number; quantity: number }[] = [];
+
+    for (const row of rows) {
+      const invId = row.getAttribute("data-invoice-item-id");
+      const ret = row.getAttribute("data-return") || "0";
+      const qty = Math.max(0, Math.floor(Number(ret)));
+
+      if (invId && qty > 0) {
+        itemsToReturn.push({ invoice_item_id: Number(invId), quantity: qty });
       }
     }
+
     if (itemsToReturn.length === 0) {
       alert("No items selected for return.");
       return;
@@ -899,67 +932,25 @@ function ReturnSelectedButton({ invoice, onDone }: { invoice: Invoice; onDone?: 
 
     setBusy(true);
     try {
-      // primary: call server return action
+      // Call server return action
       const res = await fetch(`${API_BASE}/invoices/${invoice.id}/return/`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items: itemsToReturn }),
       });
+
       if (res.ok) {
-        alert("Partial return successful.");
+        alert("Return successful.");
         if (onDone) await onDone(true);
-        return;
+      } else {
+        const errorText = await res.text();
+        console.error("Return failed:", res.status, errorText);
+        alert(`Return failed: ${errorText}`);
       }
-
-      // fallback: attempt patching invoice items and medicines individually
-      console.warn("Return endpoint failed, attempting fallback. status:", res.status);
-      // fetch latest invoice from server to get item ids & medicine ids
-      const invRes = await fetch(`${API_BASE}/invoices/${invoice.id}/`, { credentials: "include" });
-      if (!invRes.ok) throw new Error("Failed fetching invoice for fallback");
-      const invJson = await invRes.json();
-      // for each returned item, find matching invoice item record
-      for (const it of itemsToReturn) {
-        const match = (invJson.items || []).find((x: any) => Number(x.id) === Number(it.invoice_item_id) || Number(x.medicine_id) === Number(it.invoice_item_id));
-        if (!match) continue;
-        const newReturned = (match.returned_quantity || 0) + it.quantity;
-        // patch the invoice item
-        try {
-          await fetch(`${API_BASE}/invoice-items/${match.id}/`, {
-            method: "PATCH",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ returned_quantity: newReturned }),
-          });
-        } catch (err) { console.warn("Failed patch invoice item", err); }
-        // patch medicine stock (increase)
-        if (match.medicine) {
-          try {
-            const med = await (await fetch(`${API_BASE}/medicines/${match.medicine}/`, { credentials: "include" })).json();
-            const newStock = (med.stock || 0) + it.quantity;
-            await fetch(`${API_BASE}/medicines/${match.medicine}/`, {
-              method: "PATCH",
-              credentials: "include",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ stock: newStock }),
-            });
-          } catch (err) { console.warn("Failed patch medicine", err); }
-        }
-      }
-      // finally, mark invoice as returned (set status and returned_at)
-      await fetch(`${API_BASE}/invoices/${invoice.id}/`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "Returned", returned_at: new Date().toISOString() }),
-      });
-
-      alert("Partial return (fallback) completed.");
-      if (onDone) await onDone(true);
     } catch (err) {
-      console.error("Partial return failed:", err);
-      alert("Partial return failed. See console for details.");
-      if (onDone) await onDone(false);
+      console.error("Return error:", err);
+      alert("An error occurred while processing the return.");
     } finally {
       setBusy(false);
     }

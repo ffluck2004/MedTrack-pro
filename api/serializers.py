@@ -43,6 +43,7 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
         queryset=Medicine.objects.all(), source="medicine", write_only=True
     )
     medicine_name = serializers.CharField(source="medicine.name", read_only=True)
+    medicine_manufacturer = serializers.CharField(source="medicine.manufacturer", read_only=True)
     returned_quantity = serializers.IntegerField(read_only=True)
 
     class Meta:
@@ -51,6 +52,7 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
             "id",
             "medicine_id",
             "medicine_name",
+            "medicine_manufacturer",
             "quantity",
             "price",
             "cost",
@@ -93,25 +95,25 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         items_data = validated_data.pop("items", [])
+        if not items_data:
+            raise serializers.ValidationError({"items": "Invoice must contain at least one item."})
+
         invoice = Invoice.objects.create(**validated_data)
-        # create InvoiceItem rows (item_data will have 'medicine' because of medicine_id mapping)
         for item_data in items_data:
+            if not item_data.get("medicine"):
+                raise serializers.ValidationError({"medicine": "Each item must have a valid medicine."})
             InvoiceItem.objects.create(invoice=invoice, **item_data)
         return invoice
 
     def update(self, instance, validated_data):
-        # allow partial updates for invoice metadata
         items_data = validated_data.pop("items", None)
-        for attr, val in validated_data.items():
-            setattr(instance, attr, val)
-        instance.save()
-
         if items_data is not None:
-            # simple: clear and re-create items (if you want merging implement later)
             instance.items.all().delete()
             for item_data in items_data:
+                if not item_data.get("medicine"):
+                    raise serializers.ValidationError({"medicine": "Each item must have a valid medicine."})
                 InvoiceItem.objects.create(invoice=instance, **item_data)
-        return instance
+        return super().update(instance, validated_data)
 
 
 class PurchaseOrderSerializer(serializers.ModelSerializer):
