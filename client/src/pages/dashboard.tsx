@@ -53,6 +53,7 @@ interface Invoice {
   created_at?: string;
 }
 
+const API_BASE = "http://127.0.0.1:8000/api";   // ★ FIXED — required for correct fetching
 const COLORS = ["#4ade80", "#60a5fa", "#f87171", "#facc15", "#a78bfa"];
 
 export default function Dashboard() {
@@ -60,17 +61,17 @@ export default function Dashboard() {
         FETCH DATA (LIVE FROM BACKEND)
   ------------------------------------------------------------------ */
   const { data: medicines = [] } = useQuery<Medicine[]>({
-    queryKey: ["medicines"],         // <— correct key
+    queryKey: ["medicines"],
     queryFn: async () => {
-      const res = await fetch("/api/medicines/");
+      const res = await fetch(`${API_BASE}/medicines/`);   // ★ FIXED URL
       return res.json();
     },
   });
 
   const { data: invoices = [] } = useQuery<Invoice[]>({
-    queryKey: ["invoices"],          // <— correct key
+    queryKey: ["invoices"],
     queryFn: async () => {
-      const res = await fetch("/api/invoices/");
+      const res = await fetch(`${API_BASE}/invoices/`);    // ★ FIXED URL
       return res.json();
     },
   });
@@ -79,7 +80,6 @@ export default function Dashboard() {
         DERIVED METRICS
   ------------------------------------------------------------------ */
 
-  // ⭐ REAL TOTAL STOCK (Option A)
   const totalStock = medicines.reduce(
     (sum, m) => sum + (Number(m.stock) || 0),
     0

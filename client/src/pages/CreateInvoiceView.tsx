@@ -6,7 +6,7 @@ export default function CreateInvoiceView({ medicines, customers, onAddInvoice, 
   const [paymentMethod, setPaymentMethod] = useState<"Cash" | "Card" | "UPI" | "Split">("Cash");
   const [splitCash, setSplitCash] = useState("0");
   const [splitUPI, setSplitUPI] = useState("0");
-  
+
   // subtotal, tax, discount calculations (same logic you have)
   // handleAddItem, handleQuantityChange, handleRemoveItem, etc.
 

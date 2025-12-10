@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/select";
 import { Search, ShoppingCart, Trash2, UserPlus } from "lucide-react";
 
+import { useQueryClient } from "@tanstack/react-query"; // ⭐ ADDED
+
 /* ----------------------------------------------------------
    API CONFIG & HELPERS
 ---------------------------------------------------------- */
@@ -131,17 +133,17 @@ const normalizeInvoice = (inv: any): Invoice => ({
   created_at: inv.created_at ?? null,
   items: Array.isArray(inv.items)
     ? inv.items.map(
-        (it: any): InvoiceItem => ({
-          id: it.id,
-          medicineId: String(it.medicine_id ?? it.medicine ?? it.medicineId),
-          medicineName: it.medicine_name ?? "",
-          quantity: safeParse(it.quantity),
-          price: round2(safeParse(it.price)),
-          cost: round2(safeParse(it.cost)),
-          lineTotal: round2(safeParse(it.line_total ?? it.lineTotal)),
-          returned_quantity: safeParse(it.returned_quantity ?? 0),
-        })
-      )
+      (it: any): InvoiceItem => ({
+        id: it.id,
+        medicineId: String(it.medicine_id ?? it.medicine ?? it.medicineId),
+        medicineName: it.medicine_name ?? "",
+        quantity: safeParse(it.quantity),
+        price: round2(safeParse(it.price)),
+        cost: round2(safeParse(it.cost)),
+        lineTotal: round2(safeParse(it.line_total ?? it.lineTotal)),
+        returned_quantity: safeParse(it.returned_quantity ?? 0),
+      })
+    )
     : [],
   subtotal: round2(safeParse(inv.subtotal)),
   discount_value: round2(safeParse(inv.discount_value)),
@@ -170,15 +172,14 @@ export default function Billing(): JSX.Element {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
 
-  // initial load
+  const queryClient = useQueryClient(); // ⭐ ADDED
+
   useEffect(() => {
     const loadAll = async () => {
       try {
-        // medicines
         const meds = await fetchJSON<any[]>("/medicines/");
         setMedicines((meds || []).map(normalizeMedicine));
 
-        // customers
         const custs = await fetchJSON<any[]>("/customers/");
         setCustomers(
           (custs || []).map((c: any) => ({
@@ -189,7 +190,6 @@ export default function Billing(): JSX.Element {
           }))
         );
 
-        // invoices
         setLoadingInvoices(true);
         const invs = await fetchJSON<any[]>("/invoices/");
         setInvoices((invs || []).map(normalizeInvoice));
@@ -251,7 +251,12 @@ export default function Billing(): JSX.Element {
           setCustomers={setCustomers}
           onInvoiceSaved={async (saved) => {
             setInvoices((prev) => [saved, ...prev]);
+
             await Promise.all([refetchMedicines(), refetchInvoices()]);
+
+            // ⭐ ADDED — trigger dashboard refresh
+            queryClient.invalidateQueries(["medicines"]);
+            queryClient.invalidateQueries(["invoices"]);
           }}
         />
       ) : (
@@ -273,47 +278,36 @@ function CreateInvoiceView(props: {
 }) {
   const { medicines, setCustomers, onInvoiceSaved } = props;
 
-  // search + cart
   const [searchTerm, setSearchTerm] = useState("");
   const [cart, setCart] = useState<InvoiceItem[]>([]);
 
-  // customer info
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
 
-  // admin info
   const [adminName, setAdminName] = useState("");
 
-  // discount & tax
   const [discount, setDiscount] = useState("0");
   const [discountType, setDiscountType] = useState<"%" | "₹">("%");
   const [tax, setTax] = useState("5");
 
-  // payment
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("Cash");
   const [splitCash, setSplitCash] = useState("0");
   const [splitUPI, setSplitUPI] = useState("0");
 
   const [saving, setSaving] = useState(false);
 
-  /* ---------- Filtered medicines (search) ---------- */
-
   const filteredMedicines = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    const meds = medicines || [];
+    if (!q) return medicines.filter((m) => safeParse(m.stock) > 0);
 
-    if (!q) return meds.filter((m) => safeParse(m.stock) > 0);
-
-    return meds.filter((m) => {
+    return medicines.filter((m) => {
       const name = (m.name || "").toLowerCase();
       const manu = (m.manufacturer || "").toLowerCase();
       const barcode = (m.barcode || "").toLowerCase();
       return name.includes(q) || manu.includes(q) || barcode.includes(q);
     });
   }, [medicines, searchTerm]);
-
-  /* ---------- Cart operations ---------- */
 
   const addToCart = (m: Medicine) => {
     setCart((prev) => {
@@ -340,7 +334,6 @@ function CreateInvoiceView(props: {
         },
       ];
     });
-
     setSearchTerm("");
   };
 
@@ -365,8 +358,6 @@ function CreateInvoiceView(props: {
     setCart((prev) => prev.filter((i) => i.medicineId !== medicineId));
   };
 
-  /* ---------- Totals ---------- */
-
   const subtotal = round2(
     cart.reduce((sum, it) => sum + safeParse(it.lineTotal), 0)
   );
@@ -383,8 +374,6 @@ function CreateInvoiceView(props: {
     cart.reduce((sum, it) => sum + safeParse(it.cost) * it.quantity, 0)
   );
 
-  /* ---------- Customer: find or create ---------- */
-
   const findOrCreateCustomer = async (
     name: string,
     phone: string,
@@ -395,42 +384,35 @@ function CreateInvoiceView(props: {
         const byPhone = await fetchJSON<any[]>(
           `/customers/?contact=${encodeURIComponent(phone)}`
         );
-        if (Array.isArray(byPhone) && byPhone.length > 0) {
-          return byPhone[0];
-        }
+        if (byPhone.length > 0) return byPhone[0];
       }
 
       if (!phone && name) {
         const byName = await fetchJSON<any[]>(
           `/customers/?name=${encodeURIComponent(name)}`
         );
-        if (Array.isArray(byName) && byName.length > 0) {
-          return byName[0];
-        }
+        if (byName.length > 0) return byName[0];
       }
-
-      const payload = {
-        name: name || "Walk-in",
-        contact: phone || "",
-        address: address || "",
-      };
 
       const created = await fetchJSON<any>("/customers/", {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          name: name || "Walk-in",
+          contact: phone || "",
+          address: address || "",
+        }),
       });
 
       const customer: Customer = {
         id: created.id,
-        name: created.name ?? payload.name,
-        contact: created.contact ?? payload.contact,
-        address: created.address ?? payload.address,
+        name: created.name,
+        contact: created.contact,
+        address: created.address,
       };
 
       setCustomers((prev) => [...prev, customer]);
       return customer;
-    } catch (err) {
-      console.error("findOrCreateCustomer error:", err);
+    } catch {
       return {
         id: Date.now(),
         name: name || "Walk-in",
@@ -440,27 +422,17 @@ function CreateInvoiceView(props: {
     }
   };
 
-  const generateInvoiceNumber = (): string =>
+  const generateInvoiceNumber = () =>
     `INV-${Date.now().toString().slice(-8)}`;
 
-  /* ---------- Create Invoice ---------- */
-
   const handleCreateInvoice = async () => {
-    if (!adminName.trim()) {
-      alert("Please enter Admin Name.");
-      return;
-    }
-    if (cart.length === 0) {
-      alert("Cart is empty.");
-      return;
-    }
+    if (!adminName.trim()) return alert("Enter Admin Name.");
+    if (cart.length === 0) return alert("Cart is empty.");
 
     if (paymentMode === "Split") {
       const sum = safeParse(splitCash) + safeParse(splitUPI);
-      if (Math.abs(sum - total) > 0.01) {
-        alert("Split (Cash + UPI) must equal total.");
-        return;
-      }
+      if (Math.abs(sum - total) > 0.01)
+        return alert("Split must equal total.");
     }
 
     setSaving(true);
@@ -472,11 +444,9 @@ function CreateInvoiceView(props: {
         customerAddress.trim()
       );
 
-      const invoiceNumber = generateInvoiceNumber();
-
       const payload = {
-        invoice_number: invoiceNumber,
-        customer: customerObj.id ?? null,
+        invoice_number: generateInvoiceNumber(),
+        customer: customerObj.id,
         subtotal,
         discount_value: discountValue,
         tax_amount: taxAmount,
@@ -499,10 +469,8 @@ function CreateInvoiceView(props: {
         body: JSON.stringify(payload),
       });
 
-      const savedInvoice = normalizeInvoice(created);
-      onInvoiceSaved(savedInvoice);
+      onInvoiceSaved(normalizeInvoice(created));
 
-      // reset UI
       setCart([]);
       setCustomerName("");
       setCustomerPhone("");
@@ -517,44 +485,40 @@ function CreateInvoiceView(props: {
 
       alert("Invoice created successfully.");
     } catch (err) {
-      console.error("Create invoice error:", err);
-      alert("Failed to create invoice. See console for details.");
+      console.error(err);
+      alert("Failed to create invoice.");
     } finally {
       setSaving(false);
     }
   };
 
-  /* ---------- UI ---------- */
-
   return (
     <div className="grid gap-6 lg:grid-cols-3">
-      {/* LEFT: Search + Medicines + Cart */}
+      {/* LEFT */}
       <div className="lg:col-span-2 space-y-4">
-        {/* Search & Add */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Search className="h-5 w-5" />
-              Search &amp; Add Medicine
+              <Search className="h-5 w-5" /> Search & Add Medicine
             </CardTitle>
           </CardHeader>
           <CardContent>
             <Input
-              placeholder="Search medicine (name / manufacturer / barcode)"
+              placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="mb-3"
             />
             <div className="max-h-72 overflow-y-auto space-y-2">
               {filteredMedicines.length === 0 ? (
-                <p className="text-center text-muted-foreground py-6">
+                <p className="text-center text-muted-foreground">
                   No medicines found
                 </p>
               ) : (
                 filteredMedicines.map((m) => (
                   <div
                     key={m.id}
-                    className="p-2 border rounded-md flex justify-between items-center hover:bg-slate-50 cursor-pointer"
+                    className="p-2 border rounded-md flex justify-between cursor-pointer hover:bg-slate-50"
                     onClick={() => addToCart(m)}
                   >
                     <div>
@@ -574,13 +538,13 @@ function CreateInvoiceView(props: {
           </CardContent>
         </Card>
 
-        {/* Cart */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ShoppingCart className="h-5 w-5" /> Cart ({cart.length})
             </CardTitle>
           </CardHeader>
+
           <CardContent className="space-y-3">
             {cart.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">
@@ -601,36 +565,36 @@ function CreateInvoiceView(props: {
                     key={item.medicineId}
                     className="grid grid-cols-12 gap-2 items-center p-2 border-b"
                   >
-                    <div className="col-span-6">
-                      <div className="font-medium">{item.medicineName}</div>
+                    <div className="col-span-6 font-medium">
+                      {item.medicineName}
                     </div>
+
                     <div className="col-span-2 text-center">
                       <div className="inline-flex items-center gap-1">
                         <button
                           className="px-2"
-                          onClick={() =>
-                            updateQuantity(item.medicineId, -1)
-                          }
+                          onClick={() => updateQuantity(item.medicineId, -1)}
                         >
                           -
                         </button>
                         <span className="px-2">{item.quantity}</span>
                         <button
                           className="px-2"
-                          onClick={() =>
-                            updateQuantity(item.medicineId, 1)
-                          }
+                          onClick={() => updateQuantity(item.medicineId, 1)}
                         >
                           +
                         </button>
                       </div>
                     </div>
+
                     <div className="col-span-2 text-right">
                       {formatINR(item.price)}
                     </div>
+
                     <div className="col-span-1 text-right">
                       {formatINR(item.lineTotal)}
                     </div>
+
                     <div className="col-span-1 text-right">
                       <Button
                         size="icon"
@@ -648,12 +612,13 @@ function CreateInvoiceView(props: {
         </Card>
       </div>
 
-      {/* RIGHT: Invoice details */}
+      {/* RIGHT SIDE */}
       <div className="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>Invoice Details</CardTitle>
           </CardHeader>
+
           <CardContent className="space-y-3">
             {/* Customer */}
             <div>
@@ -666,58 +631,60 @@ function CreateInvoiceView(props: {
                 onChange={(e) => setCustomerName(e.target.value)}
                 className="mb-2"
               />
+
               <div className="flex gap-2">
                 <Input
                   placeholder="Phone"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
                 />
+
                 <Button
                   variant="outline"
                   type="button"
-                  title="Save customer"
                   onClick={async () => {
                     if (!customerName.trim() || !customerPhone.trim()) {
-                      alert("Provide name and phone");
-                      return;
+                      return alert("Provide name & phone");
                     }
+
                     try {
                       const created = await fetchJSON<any>("/customers/", {
                         method: "POST",
                         body: JSON.stringify({
                           name: customerName.trim(),
                           contact: customerPhone.trim(),
-                          address: customerAddress.trim() || "",
+                          address: customerAddress.trim(),
                         }),
                       });
+
                       setCustomers((prev) => [
                         ...prev,
                         {
                           id: created.id,
-                          name: created.name ?? customerName.trim(),
-                          contact: created.contact ?? customerPhone.trim(),
-                          address:
-                            created.address ?? customerAddress.trim() ?? "",
+                          name: created.name,
+                          contact: created.contact,
+                          address: created.address,
                         },
                       ]);
+
                       alert("Customer saved.");
                     } catch (err) {
-                      console.error("Save customer error:", err);
                       alert("Failed to save customer.");
                     }
                   }}
                 >
                   Add
                 </Button>
+
                 <Button
                   variant="ghost"
                   type="button"
-                  title="Open Customers page"
                   onClick={() => (window.location.href = "/customers")}
                 >
                   <UserPlus className="h-4 w-4" />
                 </Button>
               </div>
+
               <Input
                 placeholder="Address (optional)"
                 value={customerAddress}
@@ -738,7 +705,7 @@ function CreateInvoiceView(props: {
               />
             </div>
 
-            {/* Discount / tax */}
+            {/* Discount & Tax */}
             <div className="grid grid-cols-2 gap-2 mt-2">
               <div>
                 <label className="text-sm block">Discount</label>
@@ -750,9 +717,7 @@ function CreateInvoiceView(props: {
                   />
                   <Select
                     value={discountType}
-                    onValueChange={(v) =>
-                      setDiscountType(v as "%" | "₹")
-                    }
+                    onValueChange={(v) => setDiscountType(v as "%" | "₹")}
                   >
                     <SelectTrigger className="w-[70px]">
                       <SelectValue />
@@ -764,6 +729,7 @@ function CreateInvoiceView(props: {
                   </Select>
                 </div>
               </div>
+
               <div>
                 <label className="text-sm block">Tax (%)</label>
                 <Input
@@ -774,74 +740,45 @@ function CreateInvoiceView(props: {
               </div>
             </div>
 
-            {/* Payment mode */}
+            {/* Payment Mode */}
             <div className="mt-2">
               <label className="text-sm block mb-1">Payment Mode</label>
+
               <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  className={`py-2 rounded ${
-                    paymentMode === "Card"
+                {["Card", "UPI", "Cash", "Split"].map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={`py-2 rounded ${paymentMode === mode
                       ? "bg-emerald-600 text-white"
                       : "bg-slate-100"
-                  }`}
-                  onClick={() => setPaymentMode("Card")}
-                >
-                  Card
-                </button>
-                <button
-                  type="button"
-                  className={`py-2 rounded ${
-                    paymentMode === "UPI"
-                      ? "bg-emerald-600 text-white"
-                      : "bg-slate-100"
-                  }`}
-                  onClick={() => setPaymentMode("UPI")}
-                >
-                  UPI
-                </button>
-                <button
-                  type="button"
-                  className={`py-2 rounded ${
-                    paymentMode === "Cash"
-                      ? "bg-emerald-600 text-white"
-                      : "bg-slate-100"
-                  }`}
-                  onClick={() => setPaymentMode("Cash")}
-                >
-                  Cash
-                </button>
-                <button
-                  type="button"
-                  className={`py-2 rounded ${
-                    paymentMode === "Split"
-                      ? "bg-emerald-600 text-white"
-                      : "bg-slate-100"
-                  }`}
-                  onClick={() => setPaymentMode("Split")}
-                >
-                  Cash + UPI
-                </button>
+                      }`}
+                    onClick={() => setPaymentMode(mode as PaymentMode)}
+                  >
+                    {mode}
+                  </button>
+                ))}
               </div>
 
               {paymentMode === "Split" && (
                 <div className="mt-2 p-2 border rounded">
-                  <label className="text-xs block mb-1">
-                    Enter Split Amounts
-                  </label>
+                  <label className="text-xs block mb-1">Enter amounts</label>
+
                   <Input
-                    placeholder="Cash paid"
+                    placeholder="Cash amount"
                     value={splitCash}
                     onChange={(e) => setSplitCash(e.target.value)}
                     className="mb-2"
                   />
+
                   <Input
-                    placeholder="UPI paid"
+                    placeholder="UPI amount"
                     value={splitUPI}
                     onChange={(e) => setSplitUPI(e.target.value)}
                   />
-                  <div className="text-xs text-rose-600 mt-1">
-                    Amounts must equal total: {formatINR(total)}
+
+                  <div className="text-xs text-red-500 mt-1">
+                    Must equal: {formatINR(total)}
                   </div>
                 </div>
               )}
@@ -853,15 +790,18 @@ function CreateInvoiceView(props: {
                 <span>Subtotal:</span>
                 <span>{formatINR(subtotal)}</span>
               </div>
+
               <div className="flex justify-between text-sm">
                 <span>Discount:</span>
                 <span>{formatINR(discountValue)}</span>
               </div>
+
               <div className="flex justify-between text-sm">
                 <span>Tax:</span>
                 <span>{formatINR(taxAmount)}</span>
               </div>
-              <div className="flex justify-between font-bold text-lg border-t pt-2">
+
+              <div className="flex justify-between text-lg font-bold border-t pt-2">
                 <span>Total:</span>
                 <span>{formatINR(total)}</span>
               </div>
@@ -869,8 +809,8 @@ function CreateInvoiceView(props: {
 
             <Button
               className="w-full mt-3"
-              onClick={handleCreateInvoice}
               disabled={saving}
+              onClick={handleCreateInvoice}
             >
               {saving ? "Saving..." : "Create Invoice"}
             </Button>
@@ -888,10 +828,11 @@ function CreateInvoiceView(props: {
 function InvoiceHistoryView(props: { invoices: Invoice[]; loading: boolean }) {
   const { invoices, loading } = props;
 
-  const sorted = [...(invoices || [])].sort((a, b) => {
-    const ta = new Date(a.created_at || "").getTime() || 0;
-    const tb = new Date(b.created_at || "").getTime() || 0;
-    return tb - ta;
+  const sorted = [...invoices].sort((a, b) => {
+    return (
+      new Date(b.created_at || "").getTime() -
+      new Date(a.created_at || "").getTime()
+    );
   });
 
   const handlePrint = (inv: Invoice) => {
@@ -900,32 +841,32 @@ function InvoiceHistoryView(props: { invoices: Invoice[]; loading: boolean }) {
 
     const style = `
       <style>
-        body { font-family: Arial, Helvetica, sans-serif; padding: 20px; }
+        body { font-family: Arial; padding: 20px; }
         table { width: 100%; border-collapse: collapse; margin-top: 12px; }
         th, td { padding: 8px; border-bottom: 1px solid #ddd; }
         .right { text-align: right; }
       </style>
     `;
 
-    const rows = (inv.items || [])
+    const rows = inv.items
       .map(
         (it) => `
-        <tr>
-          <td>${it.medicineName}</td>
-          <td class="right">${it.quantity}</td>
-          <td class="right">${formatINR(it.price)}</td>
-          <td class="right">${formatINR(it.lineTotal)}</td>
-        </tr>`
+      <tr>
+        <td>${it.medicineName}</td>
+        <td class="right">${it.quantity}</td>
+        <td class="right">${formatINR(it.price)}</td>
+        <td class="right">${formatINR(it.lineTotal)}</td>
+      </tr>
+    `
       )
       .join("");
 
-    const html = `
-      <!doctype html>
+    w.document.write(`
       <html>
-        <head><meta charset="utf-8" />${style}</head>
+        <head>${style}</head>
         <body>
           <h2>Invoice ${inv.invoice_number}</h2>
-          <div>${inv.created_at ? new Date(inv.created_at).toLocaleString() : ""}</div>
+          <div>${new Date(inv.created_at || "").toLocaleString()}</div>
           <div>Customer: ${inv.customer_name || "Walk-in"}</div>
           <table>
             <thead>
@@ -943,9 +884,8 @@ function InvoiceHistoryView(props: { invoices: Invoice[]; loading: boolean }) {
           </div>
         </body>
       </html>
-    `;
+    `);
 
-    w.document.write(html);
     w.document.close();
     w.focus();
     w.print();
@@ -953,17 +893,13 @@ function InvoiceHistoryView(props: { invoices: Invoice[]; loading: boolean }) {
 
   return (
     <Card>
-      <CardHeader className="flex items-center justify-between">
-        <div>
-          <CardTitle>Invoice History</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Recent invoices (click Print to print)
-          </p>
-        </div>
+      <CardHeader>
+        <CardTitle>Invoice History</CardTitle>
       </CardHeader>
+
       <CardContent>
         {loading ? (
-          <p className="text-center text-muted-foreground py-8">
+          <p className="text-center text-muted-foreground py-6">
             Loading invoices...
           </p>
         ) : (
@@ -979,18 +915,18 @@ function InvoiceHistoryView(props: { invoices: Invoice[]; loading: boolean }) {
                   className="border rounded-md p-4 flex justify-between items-center"
                 >
                   <div>
-                    <p className="font-mono font-semibold">
-                      {inv.invoice_number}
-                    </p>
+                    <p className="font-mono font-semibold">{inv.invoice_number}</p>
                     <p className="text-sm text-muted-foreground">
                       {inv.created_at
                         ? new Date(inv.created_at).toLocaleString()
-                        : ""}
-                      {inv.customer_name ? ` — ${inv.customer_name}` : ""}
+                        : ""}{" "}
+                      — {inv.customer_name || "Walk-in"}
                     </p>
                   </div>
+
                   <div className="text-right">
                     <p className="font-semibold">{formatINR(inv.total)}</p>
+
                     <div className="flex items-center gap-2 mt-2">
                       <Badge
                         variant={
@@ -999,11 +935,8 @@ function InvoiceHistoryView(props: { invoices: Invoice[]; loading: boolean }) {
                       >
                         {inv.status}
                       </Badge>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handlePrint(inv)}
-                      >
+
+                      <Button size="sm" variant="ghost" onClick={() => handlePrint(inv)}>
                         Print
                       </Button>
                     </div>
