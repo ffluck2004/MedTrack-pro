@@ -5,6 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+
 import {
   LineChart,
   Line,
@@ -20,65 +21,115 @@ import {
   Pie,
   Cell,
 } from "recharts";
+
 import {
   Package,
   AlertTriangle,
   DollarSign,
   TrendingUp,
-  Calendar,
 } from "lucide-react";
+
 import { useQuery } from "@tanstack/react-query";
-import { Medicine, Invoice } from "@shared/schema";
+
+// IMPORTANT — your backend json uses expiry_date
+interface Medicine {
+  id: string;
+  name: string;
+  stock: number;
+  price: number;
+  cost: number;
+  expiry_date?: string | null;
+  barcode?: string;
+  manufacturer?: string;
+  category?: string;
+}
+
+interface Invoice {
+  id: string | number;
+  invoice_number: string;
+  total: number;
+  total_cost: number;
+  status?: string;
+  created_at?: string;
+}
 
 const COLORS = ["#4ade80", "#60a5fa", "#f87171", "#facc15", "#a78bfa"];
 
 export default function Dashboard() {
+  /* ------------------------------------------------------------------
+        FETCH DATA (LIVE FROM BACKEND)
+  ------------------------------------------------------------------ */
   const { data: medicines = [] } = useQuery<Medicine[]>({
-    queryKey: ["/api/medicines"],
+    queryKey: ["medicines"],         // <— correct key
+    queryFn: async () => {
+      const res = await fetch("/api/medicines/");
+      return res.json();
+    },
   });
 
   const { data: invoices = [] } = useQuery<Invoice[]>({
-    queryKey: ["/api/invoices"],
+    queryKey: ["invoices"],          // <— correct key
+    queryFn: async () => {
+      const res = await fetch("/api/invoices/");
+      return res.json();
+    },
   });
 
-  /* --------------------------- Derived Metrics ---------------------------- */
-  const totalMedicines = medicines.length;
+  /* ------------------------------------------------------------------
+        DERIVED METRICS
+  ------------------------------------------------------------------ */
+
+  // ⭐ REAL TOTAL STOCK (Option A)
+  const totalStock = medicines.reduce(
+    (sum, m) => sum + (Number(m.stock) || 0),
+    0
+  );
+
   const lowStock = medicines.filter((m) => m.stock > 0 && m.stock <= 20);
   const outOfStock = medicines.filter((m) => m.stock === 0);
-  const expired = medicines.filter((m) => new Date(m.expiryDate) < new Date());
+
+  const expired = medicines.filter((m) =>
+    m.expiry_date ? new Date(m.expiry_date) < new Date() : false
+  );
+
   const expiringSoon = medicines.filter((m) => {
+    if (!m.expiry_date) return false;
     const days = Math.ceil(
-      (new Date(m.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      (new Date(m.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
     );
     return days > 0 && days <= 60;
   });
 
   const totalRevenue = invoices
     .filter((inv) => inv.status === "Completed")
-    .reduce((sum, inv) => sum + Number(inv.total || 0), 0);
+    .reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
 
   const totalProfit = invoices
     .filter((inv) => inv.status === "Completed")
     .reduce(
       (sum, inv) =>
-        sum + (Number(inv.total || 0) - Number(inv.totalCost || 0)),
+        sum + ((Number(inv.total) || 0) - (Number(inv.total_cost) || 0)),
       0
     );
 
-  /* --------------------------- Chart Data ---------------------------- */
+  /* ------------------------------------------------------------------
+        CHART DATA
+  ------------------------------------------------------------------ */
+
   const weeklySalesData = useMemo(() => {
     const map = new Map<string, number>();
+
     invoices.forEach((inv) => {
       if (inv.status !== "Completed") return;
-      const date = new Date(inv.date).toLocaleDateString("en-IN", {
+
+      const day = new Date(inv.created_at || "").toLocaleDateString("en-IN", {
         weekday: "short",
       });
-      map.set(date, (map.get(date) || 0) + Number(inv.total || 0));
+
+      map.set(day, (map.get(day) || 0) + Number(inv.total || 0));
     });
-    return Array.from(map.entries()).map(([day, total]) => ({
-      day,
-      total,
-    }));
+
+    return [...map.entries()].map(([day, total]) => ({ day, total }));
   }, [invoices]);
 
   const stockDistribution = [
@@ -89,7 +140,7 @@ export default function Dashboard() {
     {
       name: "Healthy Stock",
       value:
-        totalMedicines -
+        medicines.length -
         (lowStock.length + outOfStock.length + expired.length + expiringSoon.length),
     },
   ];
@@ -98,92 +149,96 @@ export default function Dashboard() {
     .filter((inv) => inv.status === "Completed")
     .slice(0, 10)
     .map((inv) => ({
-      name: inv.invoiceNumber,
-      profit: Number(inv.total) - Number(inv.totalCost),
+      name: inv.invoice_number,
+      profit: Number(inv.total) - Number(inv.total_cost),
     }));
 
-  /* --------------------------- AI-style Daily Insight ---------------------------- */
+  /* ------------------------------------------------------------------
+        DAILY INSIGHT
+  ------------------------------------------------------------------ */
+
   const todayInsight = useMemo(() => {
+    const today = new Date().toDateString();
     const todayInvoices = invoices.filter(
       (inv) =>
-        new Date(inv.date).toDateString() === new Date().toDateString() &&
+        new Date(inv.created_at || "").toDateString() === today &&
         inv.status === "Completed"
     );
+
     if (todayInvoices.length === 0)
-      return "No sales yet today. Add some invoices to see insights.";
-    const total = todayInvoices.reduce((s, inv) => s + Number(inv.total || 0), 0);
-    const bestTime = "6–8 PM"; // placeholder until time analytics implemented
-    return `You've made ₹${total.toFixed(
-      2
-    )} today. Your busiest hours are likely around ${bestTime}. Keep it up!`;
+      return "No sales yet today.";
+
+    const total = todayInvoices.reduce(
+      (sum, inv) => sum + Number(inv.total || 0),
+      0
+    );
+
+    return `You've made ₹${total.toFixed(2)} today. Keep going!`;
   }, [invoices]);
 
-  /* --------------------------- Render ---------------------------- */
+  /* ------------------------------------------------------------------
+        RENDER UI
+  ------------------------------------------------------------------ */
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-semibold">Dashboard</h1>
         <p className="text-sm text-muted-foreground">
-          Overview of your pharmacy performance
+          Live overview of your store
         </p>
       </div>
 
-      {/* 🔹 Summary Cards */}
+      {/* Summary */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          title="Total Medicines"
-          value={totalMedicines}
-          icon={<Package className="h-4 w-4" />}
-        />
+        <MetricCard title="Total Stock" value={totalStock} icon={<Package />} />
         <MetricCard
           title="Low/Out of Stock"
           value={lowStock.length + outOfStock.length}
-          icon={<AlertTriangle className="h-4 w-4 text-yellow-600" />}
+          icon={<AlertTriangle className="text-yellow-600" />}
         />
         <MetricCard
           title="Total Revenue"
           value={`₹${totalRevenue.toFixed(2)}`}
-          icon={<DollarSign className="h-4 w-4 text-green-600" />}
+          icon={<DollarSign className="text-green-600" />}
         />
         <MetricCard
           title="Total Profit"
           value={`₹${totalProfit.toFixed(2)}`}
-          icon={<TrendingUp className="h-4 w-4 text-blue-600" />}
+          icon={<TrendingUp className="text-blue-600" />}
         />
       </div>
 
-      {/* 🔹 Charts */}
+      {/* Charts */}
       <div className="grid gap-4 md:grid-cols-2">
-        {/* Weekly Sales */}
         <Card>
           <CardHeader>
             <CardTitle>Weekly Sales</CardTitle>
           </CardHeader>
           <CardContent className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer>
               <LineChart data={weeklySalesData}>
                 <XAxis dataKey="day" />
                 <YAxis />
                 <Tooltip />
                 <CartesianGrid strokeDasharray="3 3" />
-                <Line type="monotone" dataKey="total" stroke="#3b82f6" />
+                <Line dataKey="total" stroke="#3b82f6" />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        {/* Profit Margin */}
         <Card>
           <CardHeader>
-            <CardTitle>Recent Invoice Profits</CardTitle>
+            <CardTitle>Recent Profits</CardTitle>
           </CardHeader>
           <CardContent className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer>
               <BarChart data={profitMarginData}>
                 <XAxis dataKey="name" hide />
                 <YAxis />
                 <Tooltip />
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid />
                 <Bar dataKey="profit" fill="#22c55e" />
               </BarChart>
             </ResponsiveContainer>
@@ -191,49 +246,45 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* 🔹 Stock Health Pie */}
+      {/* Pie Chart */}
       <Card>
         <CardHeader>
           <CardTitle>Inventory Health</CardTitle>
         </CardHeader>
         <CardContent className="flex justify-center h-72">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer>
             <PieChart>
-              <Pie
-                data={stockDistribution}
-                dataKey="value"
-                nameKey="name"
-                outerRadius={100}
-                label
-              >
-                {stockDistribution.map((_, index) => (
-                  <Cell
-                    key={index}
-                    fill={COLORS[index % COLORS.length]}
-                  />
+              <Pie data={stockDistribution} dataKey="value" nameKey="name" outerRadius={110} label>
+                {stockDistribution.map((_, i) => (
+                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip />
               <Legend />
+              <Tooltip />
             </PieChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
 
-      {/* 🔹 AI-style Daily Insight */}
-      <Card className="border border-primary/30">
+      {/* Insight */}
+      <Card>
         <CardHeader>
-          <CardTitle>Daily Insights</CardTitle>
+          <CardTitle>Daily Insight</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground italic">💡 {todayInsight}</p>
+          <p className="italic text-sm text-muted-foreground">
+            💡 {todayInsight}
+          </p>
         </CardContent>
       </Card>
     </div>
   );
 }
 
-/* --------------------------- Helper Components ---------------------------- */
+/* ------------------------------------------------------------------
+   HELPER: METRIC CARD
+------------------------------------------------------------------ */
+
 function MetricCard({
   title,
   value,
@@ -246,7 +297,7 @@ function MetricCard({
   return (
     <Card className="hover:shadow-md transition">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <CardTitle className="text-sm">{title}</CardTitle>
         {icon}
       </CardHeader>
       <CardContent>

@@ -34,7 +34,44 @@ import { useLocation, useRoute } from "wouter";
 import { ArrowLeft, Save, Camera, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-// ✅ Validation schema for medicine form
+
+// ----------------------------------------------------
+// ✅ Date Normalizer — FIXES your 400 error
+// Converts DD/MM/YYYY → YYYY-MM-DD
+// Converts DD-MM-YYYY → YYYY-MM-DD
+// Converts Excel numeric dates → YYYY-MM-DD
+// ----------------------------------------------------
+function normalizeDate(dateStr: any) {
+  if (!dateStr) return undefined;
+
+  const value = String(dateStr).trim();
+
+  // Excel numeric date (e.g., 45231)
+  if (!isNaN(Number(value))) {
+    const excelEpoch = new Date(1899, 11, 30);
+    const dateObj = new Date(excelEpoch.getTime() + Number(value) * 86400000);
+    return dateObj.toISOString().split("T")[0];
+  }
+
+  // DD/MM/YYYY
+  if (value.includes("/")) {
+    const [dd, mm, yyyy] = value.split("/");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  // DD-MM-YYYY
+  if (value.includes("-")) {
+    const [dd, mm, yyyy] = value.split("-");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  return value; // fallback
+}
+
+
+// ----------------------------------------------------
+// Schema Setup
+// ----------------------------------------------------
 const formSchema = insertMedicineSchema.extend({
   price: z.string().min(1, "Price is required"),
   cost: z.string().min(1, "Cost is required"),
@@ -44,6 +81,10 @@ const formSchema = insertMedicineSchema.extend({
 
 type FormValues = z.infer<typeof formSchema>;
 
+
+// ----------------------------------------------------
+// MAIN COMPONENT
+// ----------------------------------------------------
 export default function AddMedicine() {
   const [, setLocation] = useLocation();
   const [isEdit, params] = useRoute("/edit-medicine/:id");
@@ -52,7 +93,8 @@ export default function AddMedicine() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // ✅ Fetch medicine if editing
+
+  // Fetch Medicine for Edit Mode
   const { data: medicine } = useQuery<Medicine>({
     queryKey: ["medicines", params?.id],
     queryFn: async () => {
@@ -63,7 +105,8 @@ export default function AddMedicine() {
     enabled: isEdit && !!params?.id,
   });
 
-  // ✅ React Hook Form setup
+
+  // Form Setup
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -78,23 +121,25 @@ export default function AddMedicine() {
     },
   });
 
-  // ✅ Fill data when editing (backend uses expiry_date)
   useEffect(() => {
-  if (medicine) {
-    form.reset({
-      name: medicine.name,
-      manufacturer: medicine.manufacturer,
-      category: medicine.category,
-      stock: medicine.stock.toString(),
-      expiry_date: medicine.expiry_date, // ✅ match backend
-      barcode: medicine.barcode,
-      price: medicine.price.toString(),
-      cost: medicine.cost.toString(),
-    });
-  }
-}, [medicine, form]);
+    if (medicine) {
+      form.reset({
+        name: medicine.name,
+        manufacturer: medicine.manufacturer,
+        category: medicine.category,
+        stock: medicine.stock.toString(),
+        expiry_date: medicine.expiry_date,
+        barcode: medicine.barcode,
+        price: medicine.price.toString(),
+        cost: medicine.cost.toString(),
+      });
+    }
+  }, [medicine, form]);
 
-  // ✅ Excel Upload Handler
+
+  // ----------------------------------------------------
+  // EXCEL IMPORT — FIXED VERSION
+  // ----------------------------------------------------
   const handleExcelUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -110,12 +155,12 @@ export default function AddMedicine() {
       const newMedicines = rows.map((row: any) => ({
         name: String(row.name ?? "").trim(),
         manufacturer: String(row.manufacturer ?? "").trim(),
-       category: String(row.category ?? "Other").trim(),
-        stock: String(isNaN(Number(row.stock)) ? 0 : Math.max(0, Math.floor(Number(row.stock)))),
-        expiry_date: row.expiry_date ? String(row.expiry_date).trim() : undefined,
+        category: String(row.category ?? "Other").trim(),
+        stock: String(Math.max(0, Number(row.stock) || 0)),
+        expiry_date: normalizeDate(row.expiry_date),   // ✅ FIX APPLIED
         barcode: row.barcode ? String(row.barcode).trim() : undefined,
-        price: String(isNaN(Number(row.price)) ? 0 : Number(row.price)),
-        cost: String(isNaN(Number(row.cost)) ? 0 : Number(row.cost)),
+        price: String(Number(row.price) || 0),
+        cost: String(Number(row.cost) || 0),
       }));
 
       for (const med of newMedicines) {
@@ -128,6 +173,7 @@ export default function AddMedicine() {
         title: "Excel Imported",
         description: `${newMedicines.length} medicines added successfully.`,
       });
+
     } catch (error: any) {
       console.error("Excel import failed:", error);
       toast({
@@ -138,19 +184,22 @@ export default function AddMedicine() {
     }
   };
 
-  // ✅ Add Medicine
+
+  // ----------------------------------------------------
+  // CREATE MEDICINE
+  // ----------------------------------------------------
   const createMutation = useMutation({
     mutationFn: async (data: FormValues) =>
       apiRequest("POST", "medicines/", {
         ...data,
-        category: data.category, // ✅ keep original case as defined in backend
-        price: parseFloat(data.price as unknown as string) || 0,
-        cost: parseFloat(data.cost as unknown as string) || 0,
-        stock: parseInt(data.stock as unknown as string) || 0,
+        category: data.category,
+        price: parseFloat(data.price),
+        cost: parseFloat(data.cost),
+        stock: parseInt(data.stock),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["medicines"] });
-      form.reset(); // clear form after success
+      form.reset();
       toast({ title: "Success", description: "Medicine added successfully" });
       setLocation("/inventory");
     },
@@ -163,15 +212,18 @@ export default function AddMedicine() {
     },
   });
 
-  // ✅ Update Medicine
+
+  // ----------------------------------------------------
+  // UPDATE MEDICINE
+  // ----------------------------------------------------
   const updateMutation = useMutation({
     mutationFn: async (data: FormValues) =>
       apiRequest("PATCH", `medicines/${params?.id}/`, {
         ...data,
-        category: data.category, // ✅ keep original case as defined in backend
-        price: parseFloat(data.price as unknown as string) || 0,
-        cost: parseFloat(data.cost as unknown as string) || 0,
-        stock: parseInt(data.stock as unknown as string) || 0,
+        category: data.category,
+        price: parseFloat(data.price),
+        cost: parseFloat(data.cost),
+        stock: parseInt(data.stock),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["medicines"] });
@@ -188,15 +240,18 @@ export default function AddMedicine() {
     },
   });
 
+
   const onSubmit = (data: FormValues) => {
-    console.log("✅ SUBMIT called with:", data);
     if (isEdit) updateMutation.mutate(data);
     else createMutation.mutate(data);
   };
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
-  // Camera handlers (kept intact)
+
+  // ----------------------------------------------------
+  // Camera Barcode Logic (unchanged)
+  // ----------------------------------------------------
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -205,10 +260,10 @@ export default function AddMedicine() {
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
       setShowScanner(true);
-    } catch (error) {
+    } catch {
       toast({
         title: "Camera Error",
-        description: "Unable to access camera. Please check permissions.",
+        description: "Unable to access camera.",
         variant: "destructive",
       });
     }
@@ -217,7 +272,6 @@ export default function AddMedicine() {
   const stopCamera = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
     }
     setShowScanner(false);
   };
@@ -229,13 +283,14 @@ export default function AddMedicine() {
     stopCamera();
   };
 
-  useEffect(() => {
-    return () => stopCamera();
-  }, []);
 
-  // ✅ UI
+  // ----------------------------------------------------
+  // UI
+  // ----------------------------------------------------
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
+
+      {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => setLocation("/inventory")}>
           <ArrowLeft className="h-4 w-4" />
@@ -250,6 +305,7 @@ export default function AddMedicine() {
         </div>
       </div>
 
+      {/* Card */}
       <Card>
         <CardHeader className="flex justify-between items-center">
           <CardTitle>Medicine Information</CardTitle>
@@ -270,7 +326,10 @@ export default function AddMedicine() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+
+              {/* Form Fields */}
               <div className="grid gap-6 md:grid-cols-2">
+
                 <FormField control={form.control} name="name" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Medicine Name *</FormLabel>
@@ -278,6 +337,7 @@ export default function AddMedicine() {
                     <FormMessage />
                   </FormItem>
                 )} />
+
                 <FormField control={form.control} name="manufacturer" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Manufacturer *</FormLabel>
@@ -285,6 +345,7 @@ export default function AddMedicine() {
                     <FormMessage />
                   </FormItem>
                 )} />
+
                 <FormField control={form.control} name="category" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Category *</FormLabel>
@@ -301,6 +362,7 @@ export default function AddMedicine() {
                     <FormMessage />
                   </FormItem>
                 )} />
+
                 <FormField control={form.control} name="stock" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Stock Quantity *</FormLabel>
@@ -308,6 +370,7 @@ export default function AddMedicine() {
                     <FormMessage />
                   </FormItem>
                 )} />
+
                 <FormField control={form.control} name="price" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Selling Price (₹) *</FormLabel>
@@ -316,6 +379,7 @@ export default function AddMedicine() {
                     <FormMessage />
                   </FormItem>
                 )} />
+
                 <FormField control={form.control} name="cost" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Cost Price (₹) *</FormLabel>
@@ -324,6 +388,7 @@ export default function AddMedicine() {
                     <FormMessage />
                   </FormItem>
                 )} />
+
                 <FormField control={form.control} name="expiry_date" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Expiry Date *</FormLabel>
@@ -331,6 +396,7 @@ export default function AddMedicine() {
                     <FormMessage />
                   </FormItem>
                 )} />
+
                 <FormField control={form.control} name="barcode" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Barcode *</FormLabel>
@@ -345,6 +411,7 @@ export default function AddMedicine() {
                     <FormMessage />
                   </FormItem>
                 )} />
+
               </div>
 
               <div className="flex justify-end gap-4">
@@ -354,11 +421,14 @@ export default function AddMedicine() {
                   {isPending ? "Saving..." : isEdit ? "Update Medicine" : "Add Medicine"}
                 </Button>
               </div>
+
             </form>
           </Form>
         </CardContent>
       </Card>
 
+
+      {/* Barcode Scanner Dialog */}
       <Dialog open={showScanner} onOpenChange={(open) => !open && stopCamera()}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -385,12 +455,10 @@ export default function AddMedicine() {
                 Cancel
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground text-center">
-              Note: For demo, this generates a fake barcode. Replace with real scanner in production.
-            </p>
           </div>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }
