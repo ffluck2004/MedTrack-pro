@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -29,7 +29,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 // IMPORTANT — your backend json uses expiry_date
 interface Medicine {
@@ -53,40 +53,76 @@ interface Invoice {
   created_at?: string;
 }
 
-const API_BASE = "http://127.0.0.1:8000/api";   // ★ FIXED — required for correct fetching
 const COLORS = ["#4ade80", "#60a5fa", "#f87171", "#facc15", "#a78bfa"];
 
 export default function Dashboard() {
+  const queryClient = useQueryClient();
+
   /* ------------------------------------------------------------------
         FETCH DATA (LIVE FROM BACKEND)
+        - refetchInterval gives periodic refresh (10s)
+        - refetchOnWindowFocus ensures refetch when user returns
+        - refetchOnReconnect helps when network back
+        - staleTime kept small so derived metrics recalc on new data
   ------------------------------------------------------------------ */
   const { data: medicines = [] } = useQuery<Medicine[]>({
     queryKey: ["medicines"],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/medicines/`);   // ★ FIXED URL
+      const res = await fetch("/api/medicines/");
       return res.json();
     },
+    refetchInterval: 10000, // 10s poll as a fallback (you can reduce/increase)
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    staleTime: 5000,
   });
 
   const { data: invoices = [] } = useQuery<Invoice[]>({
     queryKey: ["invoices"],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/invoices/`);    // ★ FIXED URL
+      const res = await fetch("/api/invoices/");
       return res.json();
     },
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    staleTime: 5000,
   });
+
+  /* ------------------------------------------------------------------
+        Listen for app-wide refresh events (billing can dispatch this)
+        Usage: window.dispatchEvent(new Event("medtrack:refresh"))
+  ------------------------------------------------------------------ */
+  useEffect(() => {
+    const handler = () => {
+      // Invalidate queries so react-query refetches immediately
+      queryClient.invalidateQueries(["medicines"]);
+      queryClient.invalidateQueries(["invoices"]);
+    };
+
+    window.addEventListener("medtrack:refresh", handler);
+
+    return () => {
+      window.removeEventListener("medtrack:refresh", handler);
+    };
+  }, [queryClient]);
 
   /* ------------------------------------------------------------------
         DERIVED METRICS
   ------------------------------------------------------------------ */
 
-  const totalStock = medicines.reduce(
-    (sum, m) => sum + (Number(m.stock) || 0),
-    0
-  );
+  // ensure numeric stock
+  const totalStock = medicines.reduce((sum, m) => {
+    const stk = Number(m?.stock ?? 0);
+    return sum + (Number.isFinite(stk) ? stk : 0);
+  }, 0);
 
-  const lowStock = medicines.filter((m) => m.stock > 0 && m.stock <= 20);
-  const outOfStock = medicines.filter((m) => m.stock === 0);
+  const lowStock = medicines.filter((m) => {
+    const s = Number(m?.stock ?? 0);
+    return s > 0 && s <= 20;
+  });
+
+  const outOfStock = medicines.filter((m) => Number(m?.stock ?? 0) === 0);
 
   const expired = medicines.filter((m) =>
     m.expiry_date ? new Date(m.expiry_date) < new Date() : false
@@ -95,7 +131,8 @@ export default function Dashboard() {
   const expiringSoon = medicines.filter((m) => {
     if (!m.expiry_date) return false;
     const days = Math.ceil(
-      (new Date(m.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      (new Date(m.expiry_date).getTime() - Date.now()) /
+      (1000 * 60 * 60 * 24)
     );
     return days > 0 && days <= 60;
   });
@@ -141,7 +178,10 @@ export default function Dashboard() {
       name: "Healthy Stock",
       value:
         medicines.length -
-        (lowStock.length + outOfStock.length + expired.length + expiringSoon.length),
+        (lowStock.length +
+          outOfStock.length +
+          expired.length +
+          expiringSoon.length),
     },
   ];
 
@@ -165,8 +205,7 @@ export default function Dashboard() {
         inv.status === "Completed"
     );
 
-    if (todayInvoices.length === 0)
-      return "No sales yet today.";
+    if (todayInvoices.length === 0) return "No sales yet today.";
 
     const total = todayInvoices.reduce(
       (sum, inv) => sum + Number(inv.total || 0),
@@ -177,7 +216,7 @@ export default function Dashboard() {
   }, [invoices]);
 
   /* ------------------------------------------------------------------
-        RENDER UI
+        RENDER UI (unchanged look & layout)
   ------------------------------------------------------------------ */
 
   return (
@@ -191,7 +230,11 @@ export default function Dashboard() {
 
       {/* Summary */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <MetricCard title="Total Stock" value={totalStock} icon={<Package />} />
+        <MetricCard
+          title="Total Stock"
+          value={totalStock}
+          icon={<Package />}
+        />
         <MetricCard
           title="Low/Out of Stock"
           value={lowStock.length + outOfStock.length}
@@ -254,7 +297,13 @@ export default function Dashboard() {
         <CardContent className="flex justify-center h-72">
           <ResponsiveContainer>
             <PieChart>
-              <Pie data={stockDistribution} dataKey="value" nameKey="name" outerRadius={110} label>
+              <Pie
+                data={stockDistribution}
+                dataKey="value"
+                nameKey="name"
+                outerRadius={110}
+                label
+              >
                 {stockDistribution.map((_, i) => (
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
                 ))}
@@ -272,9 +321,7 @@ export default function Dashboard() {
           <CardTitle>Daily Insight</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="italic text-sm text-muted-foreground">
-            💡 {todayInsight}
-          </p>
+          <p className="italic text-sm text-muted-foreground">💡 {todayInsight}</p>
         </CardContent>
       </Card>
     </div>
