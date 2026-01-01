@@ -1,6 +1,10 @@
-import { Switch, Route } from "wouter";
-import { queryClient } from "./lib/queryClient";
+import { Switch, Route, Redirect, useLocation, Router as WouterRouter } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
+
+import { queryClient } from "./lib/queryClient";
+import { AuthProvider } from "./context/AuthContext";
+import PrivateRoute from "./routes/PrivateRoute";
+
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/lib/theme-provider";
@@ -11,6 +15,12 @@ import { Button } from "@/components/ui/button";
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "@/lib/theme-provider";
 
+/* AUTH PAGES */
+import Login from "@/auth/Login";
+import Register from "@/auth/Register";
+import VerifyEmail from "@/auth/VerifyEmail";
+
+/* APP PAGES */
 import Dashboard from "@/pages/dashboard";
 import Inventory from "@/pages/inventory";
 import AddMedicine from "@/pages/add-medicine";
@@ -22,16 +32,13 @@ import Reports from "@/pages/reports";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
+/* ---------------- THEME TOGGLE ---------------- */
+
 function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
 
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={toggleTheme}
-      data-testid="button-toggle-theme"
-    >
+    <Button variant="ghost" size="icon" onClick={toggleTheme}>
       {theme === "light" ? (
         <Moon className="h-5 w-5" />
       ) : (
@@ -41,25 +48,85 @@ function ThemeToggle() {
   );
 }
 
-function Router() {
+/* ---------------- ROUTER ---------------- */
+
+function AppRouter() {
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/inventory" component={Inventory} />
-      <Route path="/add-medicine" component={AddMedicine} />
-      <Route path="/edit-medicine/:id" component={AddMedicine} />
-      <Route path="/billing" component={Billing} />
-      <Route path="/customers" component={Customers} />
-      <Route path="/suppliers" component={Suppliers} />
-      <Route path="/purchase-orders" component={PurchaseOrders} />
-      <Route path="/reports" component={Reports} />
-      <Route path="/settings" component={Settings} />
+      {/* ===== PUBLIC AUTH ROUTES ===== */}
+      <Route path="/login" component={Login} />
+      <Route path="/register" component={Register} />
+      <Route path="/verify-email" component={VerifyEmail} />
+
+      {/* ===== PROTECTED ROUTES ===== */}
+      <Route path="/">
+        <PrivateRoute>
+          <Dashboard />
+        </PrivateRoute>
+      </Route>
+
+      <Route path="/inventory">
+        <PrivateRoute>
+          <Inventory />
+        </PrivateRoute>
+      </Route>
+
+      <Route path="/add-medicine">
+        <PrivateRoute>
+          <AddMedicine />
+        </PrivateRoute>
+      </Route>
+
+      <Route path="/edit-medicine/:id">
+        <PrivateRoute>
+          <AddMedicine />
+        </PrivateRoute>
+      </Route>
+
+      <Route path="/billing">
+        <PrivateRoute>
+          <Billing />
+        </PrivateRoute>
+      </Route>
+
+      <Route path="/customers">
+        <PrivateRoute>
+          <Customers />
+        </PrivateRoute>
+      </Route>
+
+      <Route path="/suppliers">
+        <PrivateRoute>
+          <Suppliers />
+        </PrivateRoute>
+      </Route>
+
+      <Route path="/purchase-orders">
+        <PrivateRoute>
+          <PurchaseOrders />
+        </PrivateRoute>
+      </Route>
+
+      <Route path="/reports">
+        <PrivateRoute>
+          <Reports />
+        </PrivateRoute>
+      </Route>
+
+      <Route path="/settings">
+        <PrivateRoute>
+          <Settings />
+        </PrivateRoute>
+      </Route>
+
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-function AppContent() {
+/* ---------------- APP LAYOUT ---------------- */
+
+function AppLayout() {
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "4rem",
@@ -71,11 +138,11 @@ function AppContent() {
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">
           <header className="flex items-center justify-between h-16 px-6 border-b border-border bg-background">
-            <SidebarTrigger data-testid="button-sidebar-toggle" />
+            <SidebarTrigger />
             <ThemeToggle />
           </header>
           <main className="flex-1 overflow-y-auto p-6 bg-background">
-            <Router />
+            <AppRouter />
           </main>
         </div>
         <ChatAssistant />
@@ -84,16 +151,35 @@ function AppContent() {
   );
 }
 
+/* ---------------- ROOT SWITCH ---------------- */
+
+function AppRoot() {
+  const [location] = useLocation();
+
+  const isAuthPage =
+    location.startsWith("/login") ||
+    location.startsWith("/register") ||
+    location.startsWith("/verify-email");
+
+  return isAuthPage ? <AppRouter /> : <AppLayout />;
+}
+
+/* ---------------- APP ENTRY ---------------- */
+
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="light">
-        <TooltipProvider>
-          <AppContent />
-          <Toaster />
-        </TooltipProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <WouterRouter>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <ThemeProvider defaultTheme="light">
+            <TooltipProvider>
+              <AppRoot />
+              <Toaster />
+            </TooltipProvider>
+          </ThemeProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </WouterRouter>
   );
 }
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from "react";
+import React, { useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -16,7 +16,6 @@ import {
   BarChart,
   Bar,
   CartesianGrid,
-  Legend,
   PieChart,
   Pie,
   Cell,
@@ -27,11 +26,16 @@ import {
   AlertTriangle,
   DollarSign,
   TrendingUp,
+  Plus,
+  FileText,
+  ShoppingBag,
+  Download,
 } from "lucide-react";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
-// IMPORTANT — your backend json uses expiry_date
+/* ---------------- Types ---------------- */
+
 interface Medicine {
   id: string;
   name: string;
@@ -39,8 +43,6 @@ interface Medicine {
   price: number;
   cost: number;
   expiry_date?: string | null;
-  barcode?: string;
-  manufacturer?: string;
   category?: string;
 }
 
@@ -53,286 +55,253 @@ interface Invoice {
   created_at?: string;
 }
 
-const COLORS = ["#4ade80", "#60a5fa", "#f87171", "#facc15", "#a78bfa"];
+/* ---------------- Utils ---------------- */
+
+const COLORS = ["#A7F3D0", "#BFDBFE", "#FECACA", "#FDE68A", "#DDD6FE"];
+
+const isExpired = (d?: string | null) =>
+  d ? new Date(d) < new Date() : false;
+
+/* ---------------- Component ---------------- */
 
 export default function Dashboard() {
-  const queryClient = useQueryClient();
-
-  /* ------------------------------------------------------------------
-        FETCH DATA (LIVE FROM BACKEND)
-        - refetchInterval gives periodic refresh (10s)
-        - refetchOnWindowFocus ensures refetch when user returns
-        - refetchOnReconnect helps when network back
-        - staleTime kept small so derived metrics recalc on new data
-  ------------------------------------------------------------------ */
+  /* ---- Fetch ---- */
   const { data: medicines = [] } = useQuery<Medicine[]>({
     queryKey: ["medicines"],
-    queryFn: async () => {
-      const res = await fetch("/api/medicines/");
-      return res.json();
-    },
-    refetchInterval: 10000, // 10s poll as a fallback (you can reduce/increase)
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-    staleTime: 5000,
+    queryFn: async () => (await fetch("/api/medicines/")).json(),
   });
 
   const { data: invoices = [] } = useQuery<Invoice[]>({
     queryKey: ["invoices"],
-    queryFn: async () => {
-      const res = await fetch("/api/invoices/");
-      return res.json();
-    },
-    refetchInterval: 10000,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-    staleTime: 5000,
+    queryFn: async () => (await fetch("/api/invoices/")).json(),
   });
 
-  /* ------------------------------------------------------------------
-        Listen for app-wide refresh events (billing can dispatch this)
-        Usage: window.dispatchEvent(new Event("medtrack:refresh"))
-  ------------------------------------------------------------------ */
-  useEffect(() => {
-    const handler = () => {
-      // Invalidate queries so react-query refetches immediately
-      queryClient.invalidateQueries(["medicines"]);
-      queryClient.invalidateQueries(["invoices"]);
-    };
+  /* ---- KPIs ---- */
 
-    window.addEventListener("medtrack:refresh", handler);
+  const completed = invoices.filter((i) => i.status === "Completed");
 
-    return () => {
-      window.removeEventListener("medtrack:refresh", handler);
-    };
-  }, [queryClient]);
+  const totalStock = medicines.reduce((s, m) => s + (Number(m.stock) || 0), 0);
+  const lowStock = medicines.filter((m) => m.stock > 0 && m.stock <= 20);
+  const outOfStock = medicines.filter((m) => m.stock === 0);
 
-  /* ------------------------------------------------------------------
-        DERIVED METRICS
-  ------------------------------------------------------------------ */
-
-  // ensure numeric stock
-  const totalStock = medicines.reduce((sum, m) => {
-    const stk = Number(m?.stock ?? 0);
-    return sum + (Number.isFinite(stk) ? stk : 0);
-  }, 0);
-
-  const lowStock = medicines.filter((m) => {
-    const s = Number(m?.stock ?? 0);
-    return s > 0 && s <= 20;
-  });
-
-  const outOfStock = medicines.filter((m) => Number(m?.stock ?? 0) === 0);
-
-  const expired = medicines.filter((m) =>
-    m.expiry_date ? new Date(m.expiry_date) < new Date() : false
+  const today = new Date().toDateString();
+  const todayInvoices = completed.filter(
+    (i) => new Date(i.created_at || "").toDateString() === today
   );
 
-  const expiringSoon = medicines.filter((m) => {
-    if (!m.expiry_date) return false;
-    const days = Math.ceil(
-      (new Date(m.expiry_date).getTime() - Date.now()) /
-      (1000 * 60 * 60 * 24)
-    );
-    return days > 0 && days <= 60;
-  });
+  const todaySales = todayInvoices.reduce(
+    (s, i) => s + Number(i.total || 0),
+    0
+  );
 
-  const totalRevenue = invoices
-    .filter((inv) => inv.status === "Completed")
-    .reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
+  const totalRevenue = completed.reduce(
+    (s, i) => s + Number(i.total || 0),
+    0
+  );
 
-  const totalProfit = invoices
-    .filter((inv) => inv.status === "Completed")
-    .reduce(
-      (sum, inv) =>
-        sum + ((Number(inv.total) || 0) - (Number(inv.total_cost) || 0)),
-      0
-    );
+  const totalProfit = completed.reduce(
+    (s, i) =>
+      s + (Number(i.total || 0) - Number(i.total_cost || 0)),
+    0
+  );
 
-  /* ------------------------------------------------------------------
-        CHART DATA
-  ------------------------------------------------------------------ */
+  /* ---- Charts ---- */
 
-  const weeklySalesData = useMemo(() => {
+  const weeklySales = useMemo(() => {
     const map = new Map<string, number>();
-
-    invoices.forEach((inv) => {
-      if (inv.status !== "Completed") return;
-
-      const day = new Date(inv.created_at || "").toLocaleDateString("en-IN", {
+    completed.forEach((i) => {
+      const d = new Date(i.created_at || "").toLocaleDateString("en-IN", {
         weekday: "short",
       });
-
-      map.set(day, (map.get(day) || 0) + Number(inv.total || 0));
+      map.set(d, (map.get(d) || 0) + Number(i.total || 0));
     });
-
     return [...map.entries()].map(([day, total]) => ({ day, total }));
-  }, [invoices]);
+  }, [completed]);
 
-  const stockDistribution = [
-    { name: "Low Stock", value: lowStock.length },
-    { name: "Out of Stock", value: outOfStock.length },
-    { name: "Expiring Soon", value: expiringSoon.length },
-    { name: "Expired", value: expired.length },
+  const profitData = completed.slice(0, 10).map((i) => ({
+    name: i.invoice_number,
+    profit: Number(i.total) - Number(i.total_cost),
+  }));
+
+  const stockHealth = [
+    { name: "Low", value: lowStock.length },
+    { name: "Out", value: outOfStock.length },
     {
-      name: "Healthy Stock",
+      name: "Expired",
+      value: medicines.filter((m) => isExpired(m.expiry_date)).length,
+    },
+    {
+      name: "Healthy",
       value:
         medicines.length -
-        (lowStock.length +
-          outOfStock.length +
-          expired.length +
-          expiringSoon.length),
+        lowStock.length -
+        outOfStock.length -
+        medicines.filter((m) => isExpired(m.expiry_date)).length,
     },
   ];
 
-  const profitMarginData = invoices
-    .filter((inv) => inv.status === "Completed")
-    .slice(0, 10)
-    .map((inv) => ({
-      name: inv.invoice_number,
-      profit: Number(inv.total) - Number(inv.total_cost),
-    }));
+  const categoryData = Object.values(
+    medicines.reduce((acc: any, m) => {
+      const k = m.category || "Other";
+      acc[k] = acc[k] || { name: k, stock: 0 };
+      acc[k].stock += Number(m.stock) || 0;
+      return acc;
+    }, {})
+  );
 
-  /* ------------------------------------------------------------------
-        DAILY INSIGHT
-  ------------------------------------------------------------------ */
+  const expiryData = medicines
+    .filter((m) => m.expiry_date)
+    .map((m) => {
+      const days =
+        (new Date(m.expiry_date!).getTime() - Date.now()) /
+        (1000 * 60 * 60 * 24);
+      return {
+        name: m.name,
+        days: Math.ceil(days),
+      };
+    })
+    .filter((x) => x.days <= 90);
 
-  const todayInsight = useMemo(() => {
-    const today = new Date().toDateString();
-    const todayInvoices = invoices.filter(
-      (inv) =>
-        new Date(inv.created_at || "").toDateString() === today &&
-        inv.status === "Completed"
-    );
+  /* ---- Heatmap ---- */
+  const heatmap = medicines.slice(0, 20);
 
-    if (todayInvoices.length === 0) return "No sales yet today.";
+  const stockColor = (s: number) => {
+    if (s === 0) return "bg-red-100";
+    if (s <= 20) return "bg-amber-100";
+    return "bg-emerald-100";
+  };
 
-    const total = todayInvoices.reduce(
-      (sum, inv) => sum + Number(inv.total || 0),
-      0
-    );
-
-    return `You've made ₹${total.toFixed(2)} today. Keep going!`;
-  }, [invoices]);
-
-  /* ------------------------------------------------------------------
-        RENDER UI (unchanged look & layout)
-  ------------------------------------------------------------------ */
+  /* ---------------- UI ---------------- */
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 bg-white p-6">
+      {/* Header */}
       <div>
-        <h1 className="text-3xl font-semibold">Dashboard</h1>
+        <h1 className="text-3xl font-semibold">
+          Good afternoon, Falak 👋
+        </h1>
         <p className="text-sm text-muted-foreground">
-          Live overview of your store
+          Pharmacy productivity dashboard
         </p>
       </div>
 
-      {/* Summary */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          title="Total Stock"
-          value={totalStock}
-          icon={<Package />}
-        />
-        <MetricCard
-          title="Low/Out of Stock"
-          value={lowStock.length + outOfStock.length}
-          icon={<AlertTriangle className="text-yellow-600" />}
-        />
-        <MetricCard
-          title="Total Revenue"
-          value={`₹${totalRevenue.toFixed(2)}`}
-          icon={<DollarSign className="text-green-600" />}
-        />
-        <MetricCard
-          title="Total Profit"
-          value={`₹${totalProfit.toFixed(2)}`}
-          icon={<TrendingUp className="text-blue-600" />}
-        />
+      {/* KPI STRIP */}
+      <div className="grid gap-4 md:grid-cols-5">
+        <KPI title="Today Sales" value={`₹${todaySales.toFixed(2)}`} icon={<DollarSign />} />
+        <KPI title="Invoices Today" value={todayInvoices.length} icon={<FileText />} />
+        <KPI title="Total Stock" value={totalStock} icon={<Package />} />
+        <KPI title="Low / Out" value={lowStock.length + outOfStock.length} icon={<AlertTriangle />} />
+        <KPI title="Total Profit" value={`₹${totalProfit.toFixed(2)}`} icon={<TrendingUp />} />
       </div>
 
-      {/* Charts */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Weekly Sales</CardTitle>
-          </CardHeader>
-          <CardContent className="h-64">
-            <ResponsiveContainer>
-              <LineChart data={weeklySalesData}>
-                <XAxis dataKey="day" />
-                <YAxis />
-                <Tooltip />
-                <CartesianGrid strokeDasharray="3 3" />
-                <Line dataKey="total" stroke="#3b82f6" />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Profits</CardTitle>
-          </CardHeader>
-          <CardContent className="h-64">
-            <ResponsiveContainer>
-              <BarChart data={profitMarginData}>
-                <XAxis dataKey="name" hide />
-                <YAxis />
-                <Tooltip />
-                <CartesianGrid />
-                <Bar dataKey="profit" fill="#22c55e" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+      {/* QUICK ACTIONS */}
+      <div className="flex flex-wrap gap-3">
+        <Action label="Add Medicine" icon={<Plus className="h-4 w-4" />} to="/add-medicine" />
+        <Action label="Create Invoice" icon={<FileText className="h-4 w-4" />} to="/billing" />
+        <Action label="Record Purchase" icon={<ShoppingBag className="h-4 w-4" />} to="/purchase-orders" />
+        <Action label="Download Report" icon={<Download className="h-4 w-4" />} to="/reports" />
       </div>
 
-      {/* Pie Chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Inventory Health</CardTitle>
-        </CardHeader>
-        <CardContent className="flex justify-center h-72">
+      {/* PERFORMANCE */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <ChartCard title="Weekly Sales Trend">
+          <ResponsiveContainer>
+            <LineChart data={weeklySales}>
+              <XAxis dataKey="day" />
+              <YAxis />
+              <Tooltip />
+              <CartesianGrid strokeDasharray="3 3" />
+              <Line dataKey="total" stroke="#6366f1" strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Profit per Invoice">
+          <ResponsiveContainer>
+            <BarChart data={profitData}>
+              <XAxis dataKey="name" hide />
+              <YAxis />
+              <Tooltip />
+              <CartesianGrid />
+              <Bar dataKey="profit" fill="#34d399" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      {/* INVENTORY INTELLIGENCE */}
+      <div className="grid gap-6 md:grid-cols-3">
+        <ChartCard title="Inventory Health">
           <ResponsiveContainer>
             <PieChart>
               <Pie
-                data={stockDistribution}
+                data={stockHealth}
                 dataKey="value"
-                nameKey="name"
-                outerRadius={110}
-                label
+                outerRadius={90}
+                innerRadius={50}
               >
-                {stockDistribution.map((_, i) => (
+                {stockHealth.map((_, i) => (
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
                 ))}
               </Pie>
-              <Legend />
               <Tooltip />
             </PieChart>
           </ResponsiveContainer>
-        </CardContent>
-      </Card>
+        </ChartCard>
 
-      {/* Insight */}
+        <ChartCard title="Stock by Category">
+          <ResponsiveContainer>
+            <BarChart data={categoryData}>
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="stock" fill="#60a5fa" />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Expiry Risk (≤ 90 days)">
+          <ResponsiveContainer>
+            <BarChart data={expiryData}>
+              <XAxis dataKey="name" hide />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="days" fill="#fca5a5" />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      {/* HEATMAP */}
       <Card>
         <CardHeader>
-          <CardTitle>Daily Insight</CardTitle>
+          <CardTitle>Inventory Heatmap</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="italic text-sm text-muted-foreground">💡 {todayInsight}</p>
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {heatmap.map((m) => (
+              <div
+                key={m.id}
+                className={`rounded-xl p-3 text-sm ${stockColor(
+                  m.stock
+                )}`}
+              >
+                <p className="font-medium truncate">{m.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  Stock: {m.stock}
+                </p>
+              </div>
+            ))}
+          </div>
         </CardContent>
       </Card>
     </div>
   );
 }
 
-/* ------------------------------------------------------------------
-   HELPER: METRIC CARD
------------------------------------------------------------------- */
+/* ---------------- Helpers ---------------- */
 
-function MetricCard({
+function KPI({
   title,
   value,
   icon,
@@ -342,14 +311,51 @@ function MetricCard({
   icon: React.ReactNode;
 }) {
   return (
-    <Card className="hover:shadow-md transition">
+    <Card className="shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm">{title}</CardTitle>
+        <CardTitle className="text-xs">{title}</CardTitle>
         {icon}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-2xl font-semibold">{value}</div>
       </CardContent>
     </Card>
+  );
+}
+
+function ChartCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className="shadow-sm">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="h-64">{children}</CardContent>
+    </Card>
+  );
+}
+
+function Action({
+  icon,
+  label,
+  to,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  to: string;
+}) {
+  return (
+    <button
+      onClick={() => (window.location.href = to)}
+      className="flex items-center gap-2 rounded-xl border bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 transition"
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
