@@ -11,7 +11,7 @@ const api = axios.create({
   },
 });
 
-// Attach access token to every request
+// Atatach access token to every request
 api.interceptors.request.use((config) => {
   const access = localStorage.getItem("access");
   if (access) {

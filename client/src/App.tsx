@@ -31,6 +31,8 @@ import PurchaseOrders from "@/pages/purchase-orders";
 import Reports from "@/pages/reports";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
+import RegisterSuccess from "@/auth/RegisterSuccess";
+
 
 /* ---------------- THEME TOGGLE ---------------- */
 
@@ -182,5 +184,6 @@ function App() {
     </WouterRouter>
   );
 }
+<Route path="/register-success" component={RegisterSuccess} />
 
 export default App;

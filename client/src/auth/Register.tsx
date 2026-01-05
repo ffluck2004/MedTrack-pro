@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import api from "../api/axios";
 
+
 const Register = () => {
     const [form, setForm] = useState({
         email: "",
@@ -24,6 +25,8 @@ const Register = () => {
         setLoading(true);
         setError("");
         setMessage("");
+        setLocation("/register-success");
+
 
         try {
             await api.post("/auth/register/", form);
@@ -32,6 +35,7 @@ const Register = () => {
             setError("Registration failed. Try again.");
         } finally {
             setLoading(false);
+            
         }
     };
 
