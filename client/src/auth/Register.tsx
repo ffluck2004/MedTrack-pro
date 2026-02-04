@@ -1,147 +1,104 @@
 import { useState } from "react";
-import { Link } from "wouter";
-import api from "../api/axios";
+import { Link, useLocation } from "wouter";
+import api from "@/api/axios";
+import { GoogleLogin } from "@react-oauth/google";
+import { useAuth } from "@/context/AuthContext";
 
+export default function Register() {
+    const [, setLocation] = useLocation();
+    const { googleLogin } = useAuth();
 
-const Register = () => {
+    const [step, setStep] = useState(1);
     const [form, setForm] = useState({
         email: "",
         username: "",
-        phone: "",
         password: "",
-        role: "STAFF",
     });
-
-    const [loading, setLoading] = useState(false);
-    const [message, setMessage] = useState("");
     const [error, setError] = useState("");
 
-    const handleChange = (e: any) => {
-        setForm({ ...form, [e.target.name]: e.target.value });
-    };
+    const next = () => setStep((s) => s + 1);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError("");
-        setMessage("");
-        setLocation("/register-success");
-
-
+    const submit = async () => {
         try {
             await api.post("/auth/register/", form);
-            setMessage("Account created. Please check your email to verify.");
-        } catch {
-            setError("Registration failed. Try again.");
-        } finally {
-            setLoading(false);
-            
+            setLocation("/login");
+        } catch (err: any) {
+            setError("User already exists");
         }
     };
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-100">
-            <div className="w-full max-w-4xl bg-white rounded-xl shadow-lg grid grid-cols-1 md:grid-cols-2 overflow-hidden">
+            <div className="w-full max-w-md bg-white p-8 rounded-xl shadow">
+                <h2 className="text-xl font-semibold mb-4">
+                    Create account (Step {step}/3)
+                </h2>
 
-                {/* LEFT PANEL */}
-                <div className="hidden md:flex flex-col justify-between p-8 text-white bg-gradient-to-br from-blue-600 to-indigo-700">
-                    <div>
-                        <h1 className="text-3xl font-bold mb-3">
-                            Start managing smarter.
-                        </h1>
-                        <p className="text-sm opacity-90">
-                            Create your MedTrack Pro account and manage pharmacy operations
-                            securely and efficiently.
-                        </p>
+                {error && (
+                    <div className="mb-3 text-sm text-red-600 bg-red-50 p-2 rounded">
+                        {error}
                     </div>
+                )}
 
-                    <p className="text-xs opacity-75">
-                        © {new Date().getFullYear()} MedTrack Pro
-                    </p>
-                </div>
-
-                {/* RIGHT PANEL */}
-                <div className="p-8">
-                    <h2 className="text-2xl font-semibold mb-1">Create account</h2>
-                    <p className="text-sm text-gray-500 mb-6">
-                        Please fill in the details below
-                    </p>
-
-                    {error && (
-                        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-600 border border-red-200">
-                            {error}
-                        </div>
-                    )}
-
-                    {message && (
-                        <div className="mb-4 rounded-md bg-green-50 p-3 text-sm text-green-600 border border-green-200">
-                            {message}
-                        </div>
-                    )}
-
-                    <form onSubmit={handleSubmit} className="space-y-4">
+                {step === 1 && (
+                    <>
                         <input
-                            name="username"
-                            placeholder="Username"
-                            onChange={handleChange}
-                            required
-                            className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
-                        />
-
-                        <input
-                            name="email"
-                            type="email"
                             placeholder="Email"
-                            onChange={handleChange}
-                            required
-                            className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                            className="w-full mb-3 border px-3 py-2 rounded"
+                            onChange={(e) => setForm({ ...form, email: e.target.value })}
                         />
+                        <button onClick={next} className="btn-primary">
+                            Next
+                        </button>
+                    </>
+                )}
 
+                {step === 2 && (
+                    <>
                         <input
-                            name="phone"
-                            placeholder="Phone"
-                            onChange={handleChange}
-                            required
-                            className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                            placeholder="Username"
+                            className="w-full mb-3 border px-3 py-2 rounded"
+                            onChange={(e) => setForm({ ...form, username: e.target.value })}
                         />
+                        <button onClick={next} className="btn-primary">
+                            Next
+                        </button>
+                    </>
+                )}
 
+                {step === 3 && (
+                    <>
                         <input
                             type="password"
-                            name="password"
                             placeholder="Password"
-                            onChange={handleChange}
-                            required
-                            className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                            className="w-full mb-3 border px-3 py-2 rounded"
+                            onChange={(e) => setForm({ ...form, password: e.target.value })}
                         />
-
-                        <select
-                            name="role"
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border rounded-md"
-                        >
-                            <option value="STAFF">Staff</option>
-                            <option value="ADMIN">Admin</option>
-                        </select>
-
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-60"
-                        >
-                            {loading ? "Creating..." : "Create Account"}
+                        <button onClick={submit} className="btn-primary">
+                            Create account
                         </button>
-                    </form>
+                    </>
+                )}
 
-                    <p className="text-sm text-center text-gray-500 mt-6">
-                        Already have an account?{" "}
-                        <Link href="/login" className="text-blue-600 hover:underline">
-                            Login
-                        </Link>
-                    </p>
+                <div className="my-4 text-center text-sm text-gray-500">
+                    or sign up with
                 </div>
+
+                <GoogleLogin
+                    onSuccess={(cred) => {
+                        if (cred.credential) {
+                            googleLogin(cred.credential).then(() => setLocation("/"));
+                        }
+                    }}
+                />
+
+                <p className="mt-4 text-sm text-center">
+                    Already registered?{" "}
+                    <Link href="/login" className="text-blue-600">
+                        Login
+                    </Link>
+                </p>
             </div>
         </div>
     );
-};
-
-export default Register;
+}

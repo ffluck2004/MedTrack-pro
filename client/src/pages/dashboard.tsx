@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 
 import { useQuery } from "@tanstack/react-query";
+import api from "@/api/axios";
+import { useLocation } from "wouter";
 
 /* ---------------- Types ---------------- */
 
@@ -66,27 +68,43 @@ const isExpired = (d?: string | null) =>
 
 export default function Dashboard() {
   /* ---- Fetch ---- */
+
   const { data: medicines = [] } = useQuery<Medicine[]>({
     queryKey: ["medicines"],
-    queryFn: async () => (await fetch("/api/medicines/")).json(),
+    queryFn: async () => {
+      const res = await api.get("/medicines/");
+      return res.data;
+    },
   });
 
   const { data: invoices = [] } = useQuery<Invoice[]>({
     queryKey: ["invoices"],
-    queryFn: async () => (await fetch("/api/invoices/")).json(),
+    queryFn: async () => {
+      const res = await api.get("/invoices/");
+      return res.data;
+    },
   });
 
   /* ---- KPIs ---- */
 
   const completed = invoices.filter((i) => i.status === "Completed");
 
-  const totalStock = medicines.reduce((s, m) => s + (Number(m.stock) || 0), 0);
-  const lowStock = medicines.filter((m) => m.stock > 0 && m.stock <= 20);
+  const totalStock = medicines.reduce(
+    (s, m) => s + (Number(m.stock) || 0),
+    0
+  );
+
+  const lowStock = medicines.filter(
+    (m) => m.stock > 0 && m.stock <= 20
+  );
+
   const outOfStock = medicines.filter((m) => m.stock === 0);
 
   const today = new Date().toDateString();
+
   const todayInvoices = completed.filter(
-    (i) => new Date(i.created_at || "").toDateString() === today
+    (i) =>
+      new Date(i.created_at || "").toDateString() === today
   );
 
   const todaySales = todayInvoices.reduce(
@@ -101,7 +119,9 @@ export default function Dashboard() {
 
   const totalProfit = completed.reduce(
     (s, i) =>
-      s + (Number(i.total || 0) - Number(i.total_cost || 0)),
+      s +
+      (Number(i.total || 0) -
+        Number(i.total_cost || 0)),
     0
   );
 
@@ -109,13 +129,22 @@ export default function Dashboard() {
 
   const weeklySales = useMemo(() => {
     const map = new Map<string, number>();
+
     completed.forEach((i) => {
-      const d = new Date(i.created_at || "").toLocaleDateString("en-IN", {
+      const d = new Date(
+        i.created_at || ""
+      ).toLocaleDateString("en-IN", {
         weekday: "short",
       });
       map.set(d, (map.get(d) || 0) + Number(i.total || 0));
     });
-    return [...map.entries()].map(([day, total]) => ({ day, total }));
+
+    return Array.from(map.entries()).map(
+      ([day, total]) => ({
+        day,
+        total,
+      })
+    );
   }, [completed]);
 
   const profitData = completed.slice(0, 10).map((i) => ({
@@ -123,28 +152,33 @@ export default function Dashboard() {
     profit: Number(i.total) - Number(i.total_cost),
   }));
 
+  const expiredCount = medicines.filter((m) =>
+    isExpired(m.expiry_date)
+  ).length;
+
   const stockHealth = [
     { name: "Low", value: lowStock.length },
     { name: "Out", value: outOfStock.length },
-    {
-      name: "Expired",
-      value: medicines.filter((m) => isExpired(m.expiry_date)).length,
-    },
+    { name: "Expired", value: expiredCount },
     {
       name: "Healthy",
       value:
         medicines.length -
         lowStock.length -
         outOfStock.length -
-        medicines.filter((m) => isExpired(m.expiry_date)).length,
+        expiredCount,
     },
   ];
 
   const categoryData = Object.values(
-    medicines.reduce((acc: any, m) => {
-      const k = m.category || "Other";
-      acc[k] = acc[k] || { name: k, stock: 0 };
-      acc[k].stock += Number(m.stock) || 0;
+    medicines.reduce<
+      Record<string, { name: string; stock: number }>
+    >((acc, m) => {
+      const key = m.category || "Other";
+      if (!acc[key]) {
+        acc[key] = { name: key, stock: 0 };
+      }
+      acc[key].stock += Number(m.stock) || 0;
       return acc;
     }, {})
   );
@@ -153,7 +187,8 @@ export default function Dashboard() {
     .filter((m) => m.expiry_date)
     .map((m) => {
       const days =
-        (new Date(m.expiry_date!).getTime() - Date.now()) /
+        (new Date(m.expiry_date!).getTime() -
+          Date.now()) /
         (1000 * 60 * 60 * 24);
       return {
         name: m.name,
@@ -162,7 +197,6 @@ export default function Dashboard() {
     })
     .filter((x) => x.days <= 90);
 
-  /* ---- Heatmap ---- */
   const heatmap = medicines.slice(0, 20);
 
   const stockColor = (s: number) => {
@@ -175,10 +209,9 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8 bg-white p-6">
-      {/* Header */}
       <div>
         <h1 className="text-3xl font-semibold">
-          Good afternoon, Falak 👋
+          Good afternoon, Falak
         </h1>
         <p className="text-sm text-muted-foreground">
           Pharmacy productivity dashboard
@@ -187,43 +220,87 @@ export default function Dashboard() {
 
       {/* KPI STRIP */}
       <div className="grid gap-4 md:grid-cols-5">
-        <KPI title="Today Sales" value={`₹${todaySales.toFixed(2)}`} icon={<DollarSign />} />
-        <KPI title="Invoices Today" value={todayInvoices.length} icon={<FileText />} />
-        <KPI title="Total Stock" value={totalStock} icon={<Package />} />
-        <KPI title="Low / Out" value={lowStock.length + outOfStock.length} icon={<AlertTriangle />} />
-        <KPI title="Total Profit" value={`₹${totalProfit.toFixed(2)}`} icon={<TrendingUp />} />
+        <KPI
+          title="Today Sales"
+          value={`₹${todaySales.toFixed(2)}`}
+          icon={<DollarSign />}
+        />
+        <KPI
+          title="Invoices Today"
+          value={todayInvoices.length}
+          icon={<FileText />}
+        />
+        <KPI
+          title="Total Stock"
+          value={totalStock}
+          icon={<Package />}
+        />
+        <KPI
+          title="Low / Out"
+          value={lowStock.length + outOfStock.length}
+          icon={<AlertTriangle />}
+        />
+        <KPI
+          title="Total Profit"
+          value={`₹${totalProfit.toFixed(2)}`}
+          icon={<TrendingUp />}
+        />
       </div>
 
       {/* QUICK ACTIONS */}
       <div className="flex flex-wrap gap-3">
-        <Action label="Add Medicine" icon={<Plus className="h-4 w-4" />} to="/add-medicine" />
-        <Action label="Create Invoice" icon={<FileText className="h-4 w-4" />} to="/billing" />
-        <Action label="Record Purchase" icon={<ShoppingBag className="h-4 w-4" />} to="/purchase-orders" />
-        <Action label="Download Report" icon={<Download className="h-4 w-4" />} to="/reports" />
+        <Action
+          label="Add Medicine"
+          icon={<Plus className="h-4 w-4" />}
+          to="/add-medicine"
+        />
+        <Action
+          label="Create Invoice"
+          icon={<FileText className="h-4 w-4" />}
+          to="/billing"
+        />
+        <Action
+          label="Record Purchase"
+          icon={<ShoppingBag className="h-4 w-4" />}
+          to="/purchase-orders"
+        />
+        <Action
+          label="Download Report"
+          icon={<Download className="h-4 w-4" />}
+          to="/reports"
+        />
       </div>
 
       {/* PERFORMANCE */}
       <div className="grid gap-6 md:grid-cols-2">
         <ChartCard title="Weekly Sales Trend">
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%">
             <LineChart data={weeklySales}>
               <XAxis dataKey="day" />
               <YAxis />
               <Tooltip />
               <CartesianGrid strokeDasharray="3 3" />
-              <Line dataKey="total" stroke="#6366f1" strokeWidth={2} />
+              <Line
+                dataKey="total"
+                stroke="#6366f1"
+                strokeWidth={2}
+              />
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
 
         <ChartCard title="Profit per Invoice">
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%">
             <BarChart data={profitData}>
               <XAxis dataKey="name" hide />
               <YAxis />
               <Tooltip />
               <CartesianGrid />
-              <Bar dataKey="profit" fill="#34d399" radius={[6, 6, 0, 0]} />
+              <Bar
+                dataKey="profit"
+                fill="#34d399"
+                radius={[6, 6, 0, 0]}
+              />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -232,7 +309,7 @@ export default function Dashboard() {
       {/* INVENTORY INTELLIGENCE */}
       <div className="grid gap-6 md:grid-cols-3">
         <ChartCard title="Inventory Health">
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
                 data={stockHealth}
@@ -241,7 +318,10 @@ export default function Dashboard() {
                 innerRadius={50}
               >
                 {stockHealth.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  <Cell
+                    key={i}
+                    fill={COLORS[i % COLORS.length]}
+                  />
                 ))}
               </Pie>
               <Tooltip />
@@ -250,7 +330,7 @@ export default function Dashboard() {
         </ChartCard>
 
         <ChartCard title="Stock by Category">
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%">
             <BarChart data={categoryData}>
               <XAxis dataKey="name" />
               <YAxis />
@@ -261,7 +341,7 @@ export default function Dashboard() {
         </ChartCard>
 
         <ChartCard title="Expiry Risk (≤ 90 days)">
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%">
             <BarChart data={expiryData}>
               <XAxis dataKey="name" hide />
               <YAxis />
@@ -278,7 +358,7 @@ export default function Dashboard() {
           <CardTitle>Inventory Heatmap</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
             {heatmap.map((m) => (
               <div
                 key={m.id}
@@ -286,7 +366,7 @@ export default function Dashboard() {
                   m.stock
                 )}`}
               >
-                <p className="font-medium truncate">{m.name}</p>
+                <p className="truncate font-medium">{m.name}</p>
                 <p className="text-xs text-muted-foreground">
                   Stock: {m.stock}
                 </p>
@@ -335,7 +415,9 @@ function ChartCard({
       <CardHeader>
         <CardTitle>{title}</CardTitle>
       </CardHeader>
-      <CardContent className="h-64">{children}</CardContent>
+      <CardContent className="h-64">
+        {children}
+      </CardContent>
     </Card>
   );
 }
@@ -349,10 +431,12 @@ function Action({
   label: string;
   to: string;
 }) {
+  const [, setLocation] = useLocation();
+
   return (
     <button
-      onClick={() => (window.location.href = to)}
-      className="flex items-center gap-2 rounded-xl border bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 transition"
+      onClick={() => setLocation(to)}
+      className="flex items-center gap-2 rounded-md border px-4 py-2 text-sm hover:bg-muted"
     >
       {icon}
       {label}

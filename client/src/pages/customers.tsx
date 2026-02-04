@@ -38,9 +38,14 @@ export default function Customers() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
 
+  /* ===== Query ===== */
+
   const { data: customers = [], isLoading } = useQuery<Customer[]>({
     queryKey: ["/api/customers"],
+    queryFn: async () => apiRequest("GET", "/api/customers"),
   });
+
+  /* ===== Form ===== */
 
   const form = useForm({
     resolver: zodResolver(insertCustomerSchema),
@@ -51,35 +56,55 @@ export default function Customers() {
     },
   });
 
+  /* ===== Mutations ===== */
+
   const createMutation = useMutation({
-    mutationFn: async (data: any) => apiRequest("POST", "/api/customers", data),
+    mutationFn: async (data: any) =>
+      apiRequest("POST", "/api/customers", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
       setIsDialogOpen(false);
       form.reset();
-      toast({ title: "Success", description: "Customer added successfully" });
+      toast({
+        title: "Success",
+        description: "Customer added successfully",
+      });
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) =>
-      apiRequest("PATCH", `/api/customers/${id}`, data),
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: any;
+    }) => apiRequest("PATCH", `/api/customers/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
       setIsDialogOpen(false);
       setEditingCustomer(null);
       form.reset();
-      toast({ title: "Success", description: "Customer updated successfully" });
+      toast({
+        title: "Success",
+        description: "Customer updated successfully",
+      });
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => apiRequest("DELETE", `/api/customers/${id}`, {}),
+    mutationFn: async (id: string) =>
+      apiRequest("DELETE", `/api/customers/${id}`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
-      toast({ title: "Success", description: "Customer deleted successfully" });
+      toast({
+        title: "Success",
+        description: "Customer deleted successfully",
+      });
     },
   });
+
+  /* ===== Derived Data ===== */
 
   const filteredCustomers = customers.filter(
     (c) =>
@@ -87,10 +112,16 @@ export default function Customers() {
       c.phone.includes(searchTerm)
   );
 
+  /* ===== Handlers ===== */
+
   const handleOpenDialog = (customer?: Customer) => {
     if (customer) {
       setEditingCustomer(customer);
-      form.reset({ name: customer.name, phone: customer.phone, address: customer.address || "" });
+      form.reset({
+        name: customer.name,
+        phone: customer.phone,
+        address: customer.address || "",
+      });
     } else {
       setEditingCustomer(null);
       form.reset({ name: "", phone: "", address: "" });
@@ -100,31 +131,44 @@ export default function Customers() {
 
   const onSubmit = (data: any) => {
     if (editingCustomer) {
-      updateMutation.mutate({ id: editingCustomer.id, data });
+      updateMutation.mutate({
+        id: editingCustomer.id,
+        data,
+      });
     } else {
       createMutation.mutate(data);
     }
   };
 
+  /* ===== Loading State ===== */
+
   if (isLoading) {
     return (
       <div className="flex h-96 items-center justify-center">
         <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
-          <p className="mt-4 text-sm text-muted-foreground">Loading customers...</p>
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-r-transparent" />
+          <p className="mt-4 text-sm text-muted-foreground">
+            Loading customers...
+          </p>
         </div>
       </div>
     );
   }
 
+  /* ===== Render ===== */
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-semibold text-foreground">Customers</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage customer information</p>
+          <h1 className="text-3xl font-semibold text-foreground">
+            Customers
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Manage customer information
+          </p>
         </div>
-        <Button onClick={() => handleOpenDialog()} data-testid="button-add-customer">
+        <Button onClick={() => handleOpenDialog()}>
           <UserPlus className="mr-2 h-4 w-4" />
           Add Customer
         </Button>
@@ -133,21 +177,22 @@ export default function Customers() {
       <Card>
         <CardContent className="p-6">
           <div className="relative mb-6">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search by name or phone..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
-              data-testid="input-search"
             />
           </div>
 
           {filteredCustomers.length === 0 ? (
-            <div className="text-center py-12">
-              <Users className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium text-foreground">No customers found</h3>
-              <p className="text-sm text-muted-foreground mt-1">
+            <div className="py-12 text-center">
+              <Users className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+              <h3 className="text-lg font-medium">
+                No customers found
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
                 {customers.length === 0
                   ? "Add your first customer to get started"
                   : "Try adjusting your search"}
@@ -158,17 +203,23 @@ export default function Customers() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="font-semibold">Name</TableHead>
-                    <TableHead className="font-semibold">Phone</TableHead>
-                    <TableHead className="font-semibold">Address</TableHead>
-                    <TableHead className="font-semibold text-right">Actions</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Phone</TableHead>
+                    <TableHead>Address</TableHead>
+                    <TableHead className="text-right">
+                      Actions
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredCustomers.map((customer) => (
-                    <TableRow key={customer.id} data-testid={`row-customer-${customer.id}`}>
-                      <TableCell className="font-medium">{customer.name}</TableCell>
-                      <TableCell className="font-mono">{customer.phone}</TableCell>
+                    <TableRow key={customer.id}>
+                      <TableCell className="font-medium">
+                        {customer.name}
+                      </TableCell>
+                      <TableCell className="font-mono">
+                        {customer.phone}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">
                         {customer.address || "—"}
                       </TableCell>
@@ -177,16 +228,18 @@ export default function Customers() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleOpenDialog(customer)}
-                            data-testid={`button-edit-${customer.id}`}
+                            onClick={() =>
+                              handleOpenDialog(customer)
+                            }
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => deleteMutation.mutate(customer.id)}
-                            data-testid={`button-delete-${customer.id}`}
+                            onClick={() =>
+                              deleteMutation.mutate(customer.id)
+                            }
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -201,15 +254,24 @@ export default function Customers() {
         </CardContent>
       </Card>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {editingCustomer ? "Edit Customer" : "Add New Customer"}
+              {editingCustomer
+                ? "Edit Customer"
+                : "Add New Customer"}
             </DialogTitle>
           </DialogHeader>
+
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form
+              onSubmit={form.handleSubmit(onSubmit)}
+              className="space-y-4"
+            >
               <FormField
                 control={form.control}
                 name="name"
@@ -217,12 +279,13 @@ export default function Customers() {
                   <FormItem>
                     <FormLabel>Name *</FormLabel>
                     <FormControl>
-                      <Input placeholder="Customer name" {...field} data-testid="input-name" />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
               <FormField
                 control={form.control}
                 name="phone"
@@ -230,12 +293,13 @@ export default function Customers() {
                   <FormItem>
                     <FormLabel>Phone *</FormLabel>
                     <FormControl>
-                      <Input placeholder="Phone number" {...field} data-testid="input-phone" />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
               <FormField
                 control={form.control}
                 name="address"
@@ -243,25 +307,29 @@ export default function Customers() {
                   <FormItem>
                     <FormLabel>Address</FormLabel>
                     <FormControl>
-                      <Input placeholder="Address (optional)" {...field} data-testid="input-address" />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
               <div className="flex justify-end gap-4">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setIsDialogOpen(false)}
-                  data-testid="button-cancel"
+                  onClick={() =>
+                    setIsDialogOpen(false)
+                  }
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  data-testid="button-submit"
+                  disabled={
+                    createMutation.isPending ||
+                    updateMutation.isPending
+                  }
                 >
                   {editingCustomer ? "Update" : "Add"}
                 </Button>

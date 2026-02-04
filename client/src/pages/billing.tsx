@@ -19,7 +19,7 @@ import {
 import { Search, ShoppingCart, Trash2, UserPlus } from "lucide-react";
 
 import { useQueryClient } from "@tanstack/react-query"; // ⭐ ADDED
-
+import { useLocation } from "wouter";
 /* ----------------------------------------------------------
    API CONFIG & HELPERS
 ---------------------------------------------------------- */
@@ -679,145 +679,148 @@ function CreateInvoiceView(props: {
                 <Button
                   variant="ghost"
                   type="button"
-                  onClick={() => (window.location.href = "/customers")}
+                  onClick={() => {
+                    const [, setLocation] = useLocation();
+                setLocation("/customers");
+                  }}
                 >
-                  <UserPlus className="h-4 w-4" />
-                </Button>
-              </div>
-
-              <Input
-                placeholder="Address (optional)"
-                value={customerAddress}
-                onChange={(e) => setCustomerAddress(e.target.value)}
-                className="mt-2"
-              />
+                <UserPlus className="h-4 w-4" />
+              </Button>
             </div>
 
-            {/* Admin */}
+            <Input
+              placeholder="Address (optional)"
+              value={customerAddress}
+              onChange={(e) => setCustomerAddress(e.target.value)}
+              className="mt-2"
+            />
+          </div>
+
+          {/* Admin */}
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Admin Name
+            </label>
+            <Input
+              placeholder="Admin handling sale"
+              value={adminName}
+              onChange={(e) => setAdminName(e.target.value)}
+            />
+          </div>
+
+          {/* Discount & Tax */}
+          <div className="grid grid-cols-2 gap-2 mt-2">
             <div>
-              <label className="block text-sm font-medium mb-1">
-                Admin Name
-              </label>
-              <Input
-                placeholder="Admin handling sale"
-                value={adminName}
-                onChange={(e) => setAdminName(e.target.value)}
-              />
-            </div>
-
-            {/* Discount & Tax */}
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              <div>
-                <label className="text-sm block">Discount</label>
-                <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    value={discount}
-                    onChange={(e) => setDiscount(e.target.value)}
-                  />
-                  <Select
-                    value={discountType}
-                    onValueChange={(v) => setDiscountType(v as "%" | "₹")}
-                  >
-                    <SelectTrigger className="w-[70px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="%">%</SelectItem>
-                      <SelectItem value="₹">₹</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm block">Tax (%)</label>
+              <label className="text-sm block">Discount</label>
+              <div className="flex gap-2">
                 <Input
                   type="number"
-                  value={tax}
-                  onChange={(e) => setTax(e.target.value)}
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value)}
                 />
+                <Select
+                  value={discountType}
+                  onValueChange={(v) => setDiscountType(v as "%" | "₹")}
+                >
+                  <SelectTrigger className="w-[70px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="%">%</SelectItem>
+                    <SelectItem value="₹">₹</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
-            {/* Payment Mode */}
-            <div className="mt-2">
-              <label className="text-sm block mb-1">Payment Mode</label>
+            <div>
+              <label className="text-sm block">Tax (%)</label>
+              <Input
+                type="number"
+                value={tax}
+                onChange={(e) => setTax(e.target.value)}
+              />
+            </div>
+          </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                {["Card", "UPI", "Cash", "Split"].map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={`py-2 rounded ${paymentMode === mode
-                      ? "bg-emerald-600 text-white"
-                      : "bg-slate-100"
-                      }`}
-                    onClick={() => setPaymentMode(mode as PaymentMode)}
-                  >
-                    {mode}
-                  </button>
-                ))}
-              </div>
+          {/* Payment Mode */}
+          <div className="mt-2">
+            <label className="text-sm block mb-1">Payment Mode</label>
 
-              {paymentMode === "Split" && (
-                <div className="mt-2 p-2 border rounded">
-                  <label className="text-xs block mb-1">Enter amounts</label>
+            <div className="grid grid-cols-2 gap-2">
+              {["Card", "UPI", "Cash", "Split"].map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`py-2 rounded ${paymentMode === mode
+                    ? "bg-emerald-600 text-white"
+                    : "bg-slate-100"
+                    }`}
+                  onClick={() => setPaymentMode(mode as PaymentMode)}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
 
-                  <Input
-                    placeholder="Cash amount"
-                    value={splitCash}
-                    onChange={(e) => setSplitCash(e.target.value)}
-                    className="mb-2"
-                  />
+            {paymentMode === "Split" && (
+              <div className="mt-2 p-2 border rounded">
+                <label className="text-xs block mb-1">Enter amounts</label>
 
-                  <Input
-                    placeholder="UPI amount"
-                    value={splitUPI}
-                    onChange={(e) => setSplitUPI(e.target.value)}
-                  />
+                <Input
+                  placeholder="Cash amount"
+                  value={splitCash}
+                  onChange={(e) => setSplitCash(e.target.value)}
+                  className="mb-2"
+                />
 
-                  <div className="text-xs text-red-500 mt-1">
-                    Must equal: {formatINR(total)}
-                  </div>
+                <Input
+                  placeholder="UPI amount"
+                  value={splitUPI}
+                  onChange={(e) => setSplitUPI(e.target.value)}
+                />
+
+                <div className="text-xs text-red-500 mt-1">
+                  Must equal: {formatINR(total)}
                 </div>
-              )}
+              </div>
+            )}
+          </div>
+
+          {/* Totals */}
+          <div className="border-t pt-2 space-y-1 mt-2">
+            <div className="flex justify-between text-sm">
+              <span>Subtotal:</span>
+              <span>{formatINR(subtotal)}</span>
             </div>
 
-            {/* Totals */}
-            <div className="border-t pt-2 space-y-1 mt-2">
-              <div className="flex justify-between text-sm">
-                <span>Subtotal:</span>
-                <span>{formatINR(subtotal)}</span>
-              </div>
-
-              <div className="flex justify-between text-sm">
-                <span>Discount:</span>
-                <span>{formatINR(discountValue)}</span>
-              </div>
-
-              <div className="flex justify-between text-sm">
-                <span>Tax:</span>
-                <span>{formatINR(taxAmount)}</span>
-              </div>
-
-              <div className="flex justify-between text-lg font-bold border-t pt-2">
-                <span>Total:</span>
-                <span>{formatINR(total)}</span>
-              </div>
+            <div className="flex justify-between text-sm">
+              <span>Discount:</span>
+              <span>{formatINR(discountValue)}</span>
             </div>
 
-            <Button
-              className="w-full mt-3"
-              disabled={saving}
-              onClick={handleCreateInvoice}
-            >
-              {saving ? "Saving..." : "Create Invoice"}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+            <div className="flex justify-between text-sm">
+              <span>Tax:</span>
+              <span>{formatINR(taxAmount)}</span>
+            </div>
+
+            <div className="flex justify-between text-lg font-bold border-t pt-2">
+              <span>Total:</span>
+              <span>{formatINR(total)}</span>
+            </div>
+          </div>
+
+          <Button
+            className="w-full mt-3"
+            disabled={saving}
+            onClick={handleCreateInvoice}
+          >
+            {saving ? "Saving..." : "Create Invoice"}
+          </Button>
+        </CardContent>
+      </Card>
     </div>
+    </div >
   );
 }
 

@@ -36,11 +36,20 @@ export default function Suppliers() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [editingSupplier, setEditingSupplier] =
+    useState<Supplier | null>(null);
 
-  const { data: suppliers = [], isLoading } = useQuery<Supplier[]>({
-    queryKey: ["/api/suppliers"],
-  });
+  /* ---------------- Query ---------------- */
+
+  const { data: suppliers = [], isLoading } =
+    useQuery<Supplier[]>({
+      queryKey: ["/api/suppliers"],
+      // FIX: React Query v5 requires explicit queryFn
+      queryFn: async () =>
+        apiRequest("GET", "/api/suppliers"),
+    });
+
+  /* ---------------- Form ---------------- */
 
   const form = useForm({
     resolver: zodResolver(insertSupplierSchema),
@@ -52,42 +61,85 @@ export default function Suppliers() {
     },
   });
 
+  /* ---------------- Mutations ---------------- */
+
   const createMutation = useMutation({
-    mutationFn: async (data: any) => apiRequest("POST", "/api/suppliers", data),
+    mutationFn: async (data: any) =>
+      apiRequest("POST", "/api/suppliers", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/suppliers"],
+      });
       setIsDialogOpen(false);
       form.reset();
-      toast({ title: "Success", description: "Supplier added successfully" });
+      toast({
+        title: "Success",
+        description: "Supplier added successfully",
+      });
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) =>
-      apiRequest("PATCH", `/api/suppliers/${id}`, data),
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: any;
+    }) =>
+      apiRequest(
+        "PATCH",
+        `/api/suppliers/${id}`,
+        data
+      ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/suppliers"],
+      });
       setIsDialogOpen(false);
       setEditingSupplier(null);
       form.reset();
-      toast({ title: "Success", description: "Supplier updated successfully" });
+      toast({
+        title: "Success",
+        description: "Supplier updated successfully",
+      });
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => apiRequest("DELETE", `/api/suppliers/${id}`, {}),
+    mutationFn: async (id: string) =>
+      apiRequest(
+        "DELETE",
+        `/api/suppliers/${id}`,
+        {}
+      ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
-      toast({ title: "Success", description: "Supplier deleted successfully" });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/suppliers"],
+      });
+      toast({
+        title: "Success",
+        description: "Supplier deleted successfully",
+      });
     },
   });
 
+  /* ---------------- Derived Data ---------------- */
+
   const filteredSuppliers = suppliers.filter(
     (s) =>
-      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.contactPerson.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.email.toLowerCase().includes(searchTerm.toLowerCase())
+      s.name
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      s.contactPerson
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      s.email
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase())
   );
+
+  /* ---------------- Handlers ---------------- */
 
   const handleOpenDialog = (supplier?: Supplier) => {
     if (supplier) {
@@ -95,38 +147,56 @@ export default function Suppliers() {
       form.reset(supplier);
     } else {
       setEditingSupplier(null);
-      form.reset({ name: "", contactPerson: "", phone: "", email: "" });
+      form.reset({
+        name: "",
+        contactPerson: "",
+        phone: "",
+        email: "",
+      });
     }
     setIsDialogOpen(true);
   };
 
   const onSubmit = (data: any) => {
     if (editingSupplier) {
-      updateMutation.mutate({ id: editingSupplier.id, data });
+      updateMutation.mutate({
+        id: editingSupplier.id,
+        data,
+      });
     } else {
       createMutation.mutate(data);
     }
   };
 
+  /* ---------------- Loading ---------------- */
+
   if (isLoading) {
     return (
       <div className="flex h-96 items-center justify-center">
         <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
-          <p className="mt-4 text-sm text-muted-foreground">Loading suppliers...</p>
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-r-transparent" />
+          <p className="mt-4 text-sm text-muted-foreground">
+            Loading suppliers...
+          </p>
         </div>
       </div>
     );
   }
 
+  /* ---------------- UI ---------------- */
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-semibold text-foreground">Suppliers</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage supplier information</p>
+          <h1 className="text-3xl font-semibold text-foreground">
+            Suppliers
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Manage supplier information
+          </p>
         </div>
-        <Button onClick={() => handleOpenDialog()} data-testid="button-add-supplier">
+        <Button onClick={() => handleOpenDialog()}>
           <Plus className="mr-2 h-4 w-4" />
           Add Supplier
         </Button>
@@ -135,21 +205,24 @@ export default function Suppliers() {
       <Card>
         <CardContent className="p-6">
           <div className="relative mb-6">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search suppliers..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) =>
+                setSearchTerm(e.target.value)
+              }
               className="pl-10"
-              data-testid="input-search"
             />
           </div>
 
           {filteredSuppliers.length === 0 ? (
-            <div className="text-center py-12">
-              <Truck className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium text-foreground">No suppliers found</h3>
-              <p className="text-sm text-muted-foreground mt-1">
+            <div className="py-12 text-center">
+              <Truck className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+              <h3 className="text-lg font-medium text-foreground">
+                No suppliers found
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
                 {suppliers.length === 0
                   ? "Add your first supplier to get started"
                   : "Try adjusting your search"}
@@ -160,35 +233,57 @@ export default function Suppliers() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="font-semibold">Company Name</TableHead>
-                    <TableHead className="font-semibold">Contact Person</TableHead>
-                    <TableHead className="font-semibold">Phone</TableHead>
-                    <TableHead className="font-semibold">Email</TableHead>
-                    <TableHead className="font-semibold text-right">Actions</TableHead>
+                    <TableHead>
+                      Company Name
+                    </TableHead>
+                    <TableHead>
+                      Contact Person
+                    </TableHead>
+                    <TableHead>
+                      Phone
+                    </TableHead>
+                    <TableHead>
+                      Email
+                    </TableHead>
+                    <TableHead className="text-right">
+                      Actions
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredSuppliers.map((supplier) => (
-                    <TableRow key={supplier.id} data-testid={`row-supplier-${supplier.id}`}>
-                      <TableCell className="font-medium">{supplier.name}</TableCell>
-                      <TableCell>{supplier.contactPerson}</TableCell>
-                      <TableCell className="font-mono">{supplier.phone}</TableCell>
-                      <TableCell className="text-muted-foreground">{supplier.email}</TableCell>
+                    <TableRow key={supplier.id}>
+                      <TableCell className="font-medium">
+                        {supplier.name}
+                      </TableCell>
+                      <TableCell>
+                        {supplier.contactPerson}
+                      </TableCell>
+                      <TableCell className="font-mono">
+                        {supplier.phone}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {supplier.email}
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleOpenDialog(supplier)}
-                            data-testid={`button-edit-${supplier.id}`}
+                            onClick={() =>
+                              handleOpenDialog(supplier)
+                            }
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => deleteMutation.mutate(supplier.id)}
-                            data-testid={`button-delete-${supplier.id}`}
+                            onClick={() =>
+                              deleteMutation.mutate(
+                                supplier.id
+                              )
+                            }
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -203,41 +298,56 @@ export default function Suppliers() {
         </CardContent>
       </Card>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {editingSupplier ? "Edit Supplier" : "Add New Supplier"}
+              {editingSupplier
+                ? "Edit Supplier"
+                : "Add New Supplier"}
             </DialogTitle>
           </DialogHeader>
+
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form
+              onSubmit={form.handleSubmit(onSubmit)}
+              className="space-y-4"
+            >
               <FormField
                 control={form.control}
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Company Name *</FormLabel>
+                    <FormLabel>
+                      Company Name *
+                    </FormLabel>
                     <FormControl>
-                      <Input placeholder="Company name" {...field} data-testid="input-name" />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
               <FormField
                 control={form.control}
                 name="contactPerson"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Contact Person *</FormLabel>
+                    <FormLabel>
+                      Contact Person *
+                    </FormLabel>
                     <FormControl>
-                      <Input placeholder="Contact person name" {...field} data-testid="input-contact-person" />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
               <FormField
                 control={form.control}
                 name="phone"
@@ -245,12 +355,13 @@ export default function Suppliers() {
                   <FormItem>
                     <FormLabel>Phone *</FormLabel>
                     <FormControl>
-                      <Input placeholder="Phone number" {...field} data-testid="input-phone" />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
               <FormField
                 control={form.control}
                 name="email"
@@ -258,25 +369,29 @@ export default function Suppliers() {
                   <FormItem>
                     <FormLabel>Email *</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="Email address" {...field} data-testid="input-email" />
+                      <Input type="email" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
               <div className="flex justify-end gap-4">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setIsDialogOpen(false)}
-                  data-testid="button-cancel"
+                  onClick={() =>
+                    setIsDialogOpen(false)
+                  }
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  data-testid="button-submit"
+                  disabled={
+                    createMutation.isPending ||
+                    updateMutation.isPending
+                  }
                 >
                   {editingSupplier ? "Update" : "Add"}
                 </Button>

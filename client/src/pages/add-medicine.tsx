@@ -30,9 +30,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useLocation, useRoute } from "wouter";
+import { useRoute } from "wouter";
 import { ArrowLeft, Save, Camera, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
+
 
 
 // ----------------------------------------------------
@@ -201,8 +203,9 @@ export default function AddMedicine() {
       queryClient.invalidateQueries({ queryKey: ["medicines"] });
       form.reset();
       toast({ title: "Success", description: "Medicine added successfully" });
-      setLocation("/inventory");
+      setLocation("/login");
     },
+
     onError: (error: Error) => {
       toast({
         title: "Error Adding Medicine",
@@ -231,6 +234,7 @@ export default function AddMedicine() {
       toast({ title: "Updated", description: "Medicine updated successfully" });
       setLocation("/inventory");
     },
+
     onError: (error: Error) => {
       toast({
         title: "Error Updating Medicine",
@@ -292,9 +296,14 @@ export default function AddMedicine() {
 
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/inventory")}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => (setLocation("/inventory"))}
+        >
           <ArrowLeft className="h-4 w-4" />
         </Button>
+
         <div>
           <h1 className="text-3xl font-semibold">
             {isEdit ? "Edit Medicine" : "Add New Medicine"}
@@ -415,7 +424,15 @@ export default function AddMedicine() {
               </div>
 
               <div className="flex justify-end gap-4">
-                <Button type="button" variant="outline" onClick={() => setLocation("/inventory")} disabled={isPending}>Cancel</Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => (setLocation("/inventory"))}
+                  disabled={isPending}
+                >
+                  Cancel
+                </Button>
+
                 <Button type="submit" disabled={isPending}>
                   <Save className="mr-2 h-4 w-4" />
                   {isPending ? "Saving..." : isEdit ? "Update Medicine" : "Add Medicine"}

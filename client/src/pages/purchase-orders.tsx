@@ -10,19 +10,32 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FileText, Package } from "lucide-react";
+import { FileText } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+// FIX: apiRequest imported to provide queryFn (React Query v5 requirement)
 
 export default function PurchaseOrders() {
-  const { data: purchaseOrders = [], isLoading: ordersLoading } = useQuery<PurchaseOrder[]>({
+  const {
+    data: purchaseOrders = [],
+    isLoading: ordersLoading,
+  } = useQuery<PurchaseOrder[]>({
     queryKey: ["/api/purchase-orders"],
+    // FIX: React Query v5 requires queryFn
+    queryFn: async () =>
+      apiRequest("GET", "/api/purchase-orders"),
   });
 
   const { data: suppliers = [] } = useQuery<Supplier[]>({
     queryKey: ["/api/suppliers"],
+    // FIX: React Query v5 requires queryFn
+    queryFn: async () =>
+      apiRequest("GET", "/api/suppliers"),
   });
 
   const getSupplierName = (supplierId: string) => {
-    const supplier = suppliers.find((s) => s.id === supplierId);
+    const supplier = suppliers.find(
+      (s) => s.id === supplierId
+    );
     return supplier?.name || "Unknown Supplier";
   };
 
@@ -30,8 +43,10 @@ export default function PurchaseOrders() {
     return (
       <div className="flex h-96 items-center justify-center">
         <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
-          <p className="mt-4 text-sm text-muted-foreground">Loading purchase orders...</p>
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-r-transparent" />
+          <p className="mt-4 text-sm text-muted-foreground">
+            Loading purchase orders...
+          </p>
         </div>
       </div>
     );
@@ -40,17 +55,23 @@ export default function PurchaseOrders() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold text-foreground">Purchase Orders</h1>
-        <p className="text-sm text-muted-foreground mt-1">Track orders from suppliers</p>
+        <h1 className="text-3xl font-semibold text-foreground">
+          Purchase Orders
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Track orders from suppliers
+        </p>
       </div>
 
       <Card>
         <CardContent className="p-6">
           {purchaseOrders.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium text-foreground">No purchase orders</h3>
-              <p className="text-sm text-muted-foreground mt-1">
+            <div className="py-12 text-center">
+              <FileText className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+              <h3 className="text-lg font-medium text-foreground">
+                No purchase orders
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
                 Purchase orders will appear here when created
               </p>
             </div>
@@ -59,25 +80,48 @@ export default function PurchaseOrders() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="font-semibold">PO Number</TableHead>
-                    <TableHead className="font-semibold">Supplier</TableHead>
-                    <TableHead className="font-semibold">Date</TableHead>
-                    <TableHead className="font-semibold text-right">Total Amount</TableHead>
-                    <TableHead className="font-semibold">Status</TableHead>
+                    <TableHead className="font-semibold">
+                      PO Number
+                    </TableHead>
+                    <TableHead className="font-semibold">
+                      Supplier
+                    </TableHead>
+                    <TableHead className="font-semibold">
+                      Date
+                    </TableHead>
+                    <TableHead className="font-semibold text-right">
+                      Total Amount
+                    </TableHead>
+                    <TableHead className="font-semibold">
+                      Status
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
+
                 <TableBody>
                   {purchaseOrders.map((po) => (
-                    <TableRow key={po.id} data-testid={`row-po-${po.id}`}>
-                      <TableCell className="font-mono font-semibold">{po.poNumber}</TableCell>
-                      <TableCell>{getSupplierName(po.supplierId)}</TableCell>
+                    <TableRow key={po.id}>
+                      <TableCell className="font-mono font-semibold">
+                        {po.poNumber}
+                      </TableCell>
+                      <TableCell>
+                        {getSupplierName(po.supplierId)}
+                      </TableCell>
                       <TableCell>{po.date}</TableCell>
                       <TableCell className="text-right font-mono">
-                        ₹{parseFloat(po.totalAmount.toString()).toFixed(2)}
+                        ₹
+                        {Number(po.totalAmount).toFixed(
+                          2
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge
-                          variant={po.status === "Completed" ? "default" : "secondary"}
+                          // FIX: Badge variant kept union-safe
+                          variant={
+                            po.status === "Completed"
+                              ? "default"
+                              : "secondary"
+                          }
                         >
                           {po.status}
                         </Badge>

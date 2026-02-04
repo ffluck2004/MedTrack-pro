@@ -1,77 +1,83 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
-import api from "../api/axios";
+import { createContext, useContext, useEffect, useState } from "react";
+import { useLocation } from "wouter";
+import api from "@/api/axios";
 
-interface User {
+type User = {
+  id: number;
   email: string;
   username: string;
-  role: "ADMIN" | "STAFF";
-}
+  role: string;
+};
 
-interface AuthContextType {
-  user: User | null;
-  isAuthenticated: boolean;
+type AuthContextType = {
+  user: User | null | undefined;
+  loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
-}
+  googleLogin: (idToken: string) => Promise<void>;
+  logout: () => Promise<void>;
+};
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  // 🔑 IMPORTANT: undefined = not checked yet
+  const [user, setUser] = useState<User | null | undefined>(undefined);
+  const [loading, setLoading] = useState(true);
+  const [, setLocation] = useLocation();
 
-  // Restore session on reload
+  // Restore session ONCE
   useEffect(() => {
-    const storedUser = localStorage.getItem("user");
-    const access = localStorage.getItem("access");
+    let mounted = true;
 
-    if (storedUser && access) {
-      setUser(JSON.parse(storedUser));
-      setIsAuthenticated(true);
-    }
+    (async () => {
+      try {
+        const res = await api.get("/auth/me/");
+        if (mounted) {
+          setUser(res.data.user ?? null);
+        }
+      } catch {
+        if (mounted) {
+          setUser(null);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  // LOGIN
   const login = async (email: string, password: string) => {
     const res = await api.post("/auth/login/", { email, password });
-
-    localStorage.setItem("access", res.data.access);
-    localStorage.setItem("refresh", res.data.refresh);
-    localStorage.setItem("user", JSON.stringify(res.data.user));
-
     setUser(res.data.user);
-    setIsAuthenticated(true);
   };
 
-  // LOGOUT
-  const logout = () => {
-    localStorage.clear();
+  const googleLogin = async (idToken: string) => {
+    const res = await api.post("/auth/google-login/", { id_token: idToken });
+    setUser(res.data.user);
+  };
+
+  const logout = async () => {
+    await api.post("/auth/logout/");
     setUser(null);
-    setIsAuthenticated(false);
-    window.location.href = "/login";
+    setLocation("/login");
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated,
-        login,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={{ user, loading, login, googleLogin, logout }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-// Hook
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
     throw new Error("useAuth must be used within AuthProvider");
   }
-  return context;
-};
+  return ctx;
+}

@@ -1,12 +1,37 @@
-import express, { type Request, Response, NextFunction } from "express";
+// server/index.ts
+import express from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
+/* ================= CSP (SAFE & WORKING) ================= */
+
+app.use((req, res, next) => {
+  const isDev = app.get("env") === "development";
+
+  const csp = [
+    "default-src 'self'",
+    isDev
+      ? "script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com"
+      : "script-src 'self' https://accounts.google.com https://apis.google.com",
+    "frame-src https://accounts.google.com",
+    // "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com",
+    "connect-src 'self' http://127.0.0.1:8000 https://accounts.google.com https://oauth2.googleapis.com",
+    "img-src 'self' data: https:",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
+    "font-src 'self' https://fonts.gstatic.com",
+  ].join("; ");
+
+  res.setHeader("Content-Security-Policy", csp);
+  next();
+});
+
+/* ================= BODY PARSING ================= */
+
 declare module "http" {
   interface IncomingMessage {
-    rawBody: unknown;
+    rawBody?: Buffer;
   }
 }
 
@@ -19,59 +44,25 @@ app.use(
 );
 app.use(express.urlencoded({ extended: false }));
 
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
-    }
-  });
-
-  next();
-});
+/* ================= BOOTSTRAP ================= */
 
 (async () => {
+  // 🔥🔥🔥 MOST IMPORTANT LINE 🔥🔥🔥
+  // Register API routes FIRST
   const server = await registerRoutes(app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+  // 🔒 NEVER let Vite touch /api
+  // app.use("/api", (_req, _res, next) => next());
 
-    res.status(status).json({ message });
-    throw err;
-  });
-
-  // Only setup Vite in development (after routes)
+  // Frontend handling AFTER API
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
     serveStatic(app);
   }
 
-  // ✅ Fixed: Safe and portable server listen setup
-  const port = parseInt(process.env.PORT || "5000", 10);
-  const host = process.env.NODE_ENV === "production" ? "0.0.0.0" : "localhost";
-
-  server.listen(port, host, () => {
-    log(`✅ Server running on http://${host}:${port}`);
+  const port = 5000;
+  server.listen(port, "localhost", () => {
+    log(`✅ Server running on http://localhost:${port}`);
   });
 })();

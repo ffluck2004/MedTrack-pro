@@ -1,26 +1,37 @@
 from django.contrib.auth import authenticate
-from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from django.utils.encoding import force_str, force_bytes
-from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
-from django.core.mail import send_mail
-
 from rest_framework.views import APIView
-from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 from rest_framework import status
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenRefreshView
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+from django.conf import settings
 
+
+import requests
 from .models import User
 from .serializers import (
     RegisterSerializer,
     LoginSerializer,
     UserSerializer,
-    EmailVerificationSerializer,
 )
 
+from django.contrib.auth import authenticate
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+
+
+
+import requests
+
+from .models import User
+from .serializers import RegisterSerializer, LoginSerializer, UserSerializer
+
+
 # =========================
-# REGISTER
+# REGISTER (EMAIL)
 # =========================
 class RegisterView(APIView):
     permission_classes = [AllowAny]
@@ -28,15 +39,18 @@ class RegisterView(APIView):
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        user = serializer.save()
+        user.is_verified = False
+        user.save()
+
         return Response(
-            {"message": "Account created. Please verify your email."},
+            {"message": "Account created"},
             status=status.HTTP_201_CREATED,
         )
 
 
 # =========================
-# LOGIN
+# LOGIN (EMAIL)
 # =========================
 class LoginView(APIView):
     permission_classes = [AllowAny]
@@ -53,113 +67,138 @@ class LoginView(APIView):
         if not user:
             return Response({"error": "Invalid credentials"}, status=400)
 
-        if not user.is_verified:
-            return Response({"error": "Email not verified"}, status=400)
-
         refresh = RefreshToken.for_user(user)
 
-        return Response(
-            {
-                "access": str(refresh.access_token),
-                "refresh": str(refresh),
-                "user": UserSerializer(user).data,
-            },
-            status=200,
+        res = Response({
+            "access": str(refresh.access_token),
+            "user": UserSerializer(user).data,
+        })
+
+        # 🔐 HttpOnly cookie
+        res.set_cookie(
+            key="refresh",
+            value=str(refresh),
+            httponly=True,
+            samesite="Lax",
+            secure=False,  # True in production
+            max_age=7 * 24 * 60 * 60,
         )
 
+        return res
+
 
 # =========================
-# EMAIL VERIFICATION
+# GOOGLE LOGIN
 # =========================
-class VerifyEmailView(APIView):
+# accounts/views.py
+from django.contrib.auth import login
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from google.oauth2 import id_token
+from google.auth.transport import requests
+from django.conf import settings
+
+from .models import User
+from .serializers import UserSerializer
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def google_login(request):
+    token = request.data.get("id_token")
+    if not token:
+        return Response({"error": "Missing token"}, status=400)
+
+    try:
+        info = id_token.verify_oauth2_token(
+            token,
+            requests.Request(),
+            settings.GOOGLE_CLIENT_ID,
+        )
+    except Exception:
+        return Response({"error": "Invalid token"}, status=400)
+
+    email = info.get("email")
+    name = info.get("name", "")
+
+    user, _ = User.objects.get_or_create(
+        email=email,
+        defaults={"username": email.split("@")[0]},
+    )
+
+    # 🔑 THIS IS CRITICAL
+    login(request, user)
+
+    return Response({
+        "user": UserSerializer(user).data
+    })
+
+# =========================
+# CURRENT USER (/me)
+# =========================
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+
+@api_view(["GET"])
+def me(request):
+    if not request.user.is_authenticated:
+        return Response({"detail": "Unauthorized"}, status=401)
+
+    return Response({
+        "user": {
+            "id": request.user.id,
+            "email": request.user.email,
+            "username": request.user.username,
+            "role": request.user.role,
+        }
+    })
+
+
+# =========================
+# TOKEN REFRESH (COOKIE)
+# =========================
+class RefreshTokenView(APIView):
     permission_classes = [AllowAny]
+
+    def post(self, request):
+        refresh_token = request.COOKIES.get("refresh")
+
+        if not refresh_token:
+            return Response({"error": "No refresh token"}, status=401)
+
+        try:
+            refresh = RefreshToken(refresh_token)
+            return Response({
+                "access": str(refresh.access_token)
+            })
+        except Exception:
+            return Response({"error": "Invalid refresh"}, status=401)
+
+
+# =========================
+# LOGOUT
+# =========================
+from django.contrib.auth import logout
+
+class LogoutView(APIView):
+    def post(self, request):
+        logout(request)
+        return Response({"message": "Logged out"})
+
+# ========================= 
+# CSRF TOKEN
+# =========================
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.utils.decorators import method_decorator
+from rest_framework.views import APIView
+
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class CsrfView(APIView):
+    authentication_classes = []
+    permission_classes = []
 
     def get(self, request):
-        serializer = EmailVerificationSerializer(data=request.query_params)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            uid = force_str(urlsafe_base64_decode(serializer.validated_data["uidb64"]))
-            user = User.objects.get(id=uid)
-        except Exception:
-            return Response({"error": "Invalid link"}, status=400)
-
-        if PasswordResetTokenGenerator().check_token(
-            user, serializer.validated_data["token"]
-        ):
-            user.is_verified = True
-            user.save()
-            return Response({"message": "Email verified successfully"}, status=200)
-
-        return Response({"error": "Invalid or expired token"}, status=400)
-
-
-# =========================
-# FORGOT PASSWORD
-# =========================
-class ForgotPasswordView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        email = request.data.get("email")
-
-        if not email:
-            return Response({"error": "Email required"}, status=400)
-
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            return Response(
-                {"message": "If the email exists, a reset link was sent"},
-                status=200,
-            )
-
-        uidb64 = urlsafe_base64_encode(force_bytes(user.id))
-        token = PasswordResetTokenGenerator().make_token(user)
-
-        reset_link = f"http://localhost:5000/reset-password?uid={uidb64}&token={token}"
-
-        send_mail(
-            subject="Reset your MedTrack Pro password",
-            message=f"Click the link to reset your password:\n{reset_link}",
-            from_email=None,
-            recipient_list=[user.email],
-        )
-
-        return Response({"message": "Password reset email sent"}, status=200)
-
-
-# =========================
-# RESET PASSWORD
-# =========================
-class ResetPasswordView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        uidb64 = request.data.get("uid")
-        token = request.data.get("token")
-        password = request.data.get("password")
-
-        if not all([uidb64, token, password]):
-            return Response({"error": "Invalid request"}, status=400)
-
-        try:
-            uid = force_str(urlsafe_base64_decode(uidb64))
-            user = User.objects.get(id=uid)
-        except Exception:
-            return Response({"error": "Invalid link"}, status=400)
-
-        if not PasswordResetTokenGenerator().check_token(user, token):
-            return Response({"error": "Invalid or expired token"}, status=400)
-
-        user.set_password(password)
-        user.save()
-
-        return Response({"message": "Password reset successful"}, status=200)
-
-
-# =========================
-# JWT REFRESH (SIMPLEJWT)
-# =========================
-class RefreshTokenView(TokenRefreshView):
-    permission_classes = [AllowAny]
+        return JsonResponse({"detail": "CSRF cookie set"})
