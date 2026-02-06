@@ -11,19 +11,23 @@ export default function Login() {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
 
-    // ✅ Already logged in
-    if (user) {
-        return <Redirect to="/dashboard" />;
-    }
+    if (user) return <Redirect to="/dashboard" />;
 
-    // Email/password
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError("");
+
         try {
             await login(email, password);
             setLocation("/dashboard");
-        } catch {
-            setError("Invalid email or password");
+        } catch (err: any) {
+            const msg =
+                err?.response?.data?.error ||
+                err?.response?.data?.detail ||
+                err?.response?.data?.non_field_errors?.[0] ||
+                "Invalid email or password";
+
+            setError(msg);
         }
     };
 
@@ -68,14 +72,12 @@ export default function Login() {
                     or continue with
                 </div>
 
-                {/* ✅ GOOGLE ID TOKEN LOGIN */}
                 <GoogleLogin
                     onSuccess={async (cred) => {
                         try {
-                            if (!cred.credential) {
-                                throw new Error("No ID token");
-                            }
-                            await googleLogin(cred.credential); // ✅ ID TOKEN
+                            setError("");
+                            if (!cred.credential) throw new Error("No ID token");
+                            await googleLogin(cred.credential);
                             setLocation("/dashboard");
                         } catch {
                             setError("Google login failed");
