@@ -1,10 +1,13 @@
 from django.contrib.auth import login, logout, get_user_model
 from rest_framework.views import APIView
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from django.conf import settings
+
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 
 from google.oauth2 import id_token
 from google.auth.transport import requests
@@ -21,10 +24,10 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-
         return Response({"message": "Account created"}, status=status.HTTP_201_CREATED)
 
 
+@method_decorator(csrf_exempt, name="dispatch")
 class LoginView(APIView):
     permission_classes = [AllowAny]
 
@@ -33,13 +36,12 @@ class LoginView(APIView):
         serializer.is_valid(raise_exception=True)
 
         user = serializer.validated_data["user"]
-
-        # ✅ creates Django session cookie
         login(request, user)
 
         return Response({"user": UserSerializer(user).data})
 
 
+@method_decorator(csrf_exempt, name="dispatch")
 class LogoutView(APIView):
     def post(self, request):
         logout(request)
@@ -47,13 +49,12 @@ class LogoutView(APIView):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def me(request):
-    if not request.user.is_authenticated:
-        return Response({"detail": "Unauthorized"}, status=401)
-
     return Response({"user": UserSerializer(request.user).data})
 
 
+@csrf_exempt
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def google_login(request):
@@ -86,7 +87,6 @@ def google_login(request):
         },
     )
 
-    # If user exists but google_sub missing
     if sub and getattr(user, "google_sub", None) != sub:
         user.google_sub = sub
         user.is_verified = True

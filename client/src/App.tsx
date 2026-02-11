@@ -3,7 +3,7 @@ import { Switch, Route, Redirect } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import PrivateRoute from "./routes/PrivateRoute";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -33,8 +33,10 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ChatAssistant } from "@/components/chat-assistant";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Moon, Sun } from "lucide-react";
+import { Moon, Sun, LogOut } from "lucide-react";
 import { useTheme } from "@/lib/theme-provider";
+import { UserMenu } from "@/components/user-menu";
+
 
 function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
@@ -45,18 +47,44 @@ function ThemeToggle() {
   );
 }
 
+function LogoutButton() {
+  const { logout, user } = useAuth();
+
+  if (!user) return null;
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={logout}
+      className="flex items-center gap-2"
+    >
+      <LogOut className="h-4 w-4" />
+      Logout
+    </Button>
+  );
+}
+
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider>
       <div className="flex h-screen w-full">
         <AppSidebar />
+
         <div className="flex flex-col flex-1">
           <header className="flex items-center justify-between h-16 px-6 border-b">
             <SidebarTrigger />
-            <ThemeToggle />
+
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <UserMenu />
+            </div>
           </header>
+
+
           <main className="flex-1 overflow-y-auto p-6">{children}</main>
         </div>
+
         <ChatAssistant />
       </div>
     </SidebarProvider>
@@ -156,7 +184,6 @@ function Routes() {
   );
 }
 
-/* ✅ THIS WAS MISSING */
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>

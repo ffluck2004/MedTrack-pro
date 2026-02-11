@@ -10,13 +10,15 @@ export default function PrivateRoute({ children }: Props) {
   const { user, loading } = useAuth();
 
   // ⏳ WAIT until auth is resolved
-  if (loading || user === undefined) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <span className="text-sm text-muted-foreground">Loading...</span>
-      </div>
-    );
-  }
+  // if (loading || user === undefined) {
+  //   return (
+  //     <div className="flex h-screen items-center justify-center">
+  //       <span className="text-sm text-muted-foreground">Loading...</span>
+  //     </div>
+  //   );
+  // }
+  if (user === undefined) return null;
+
 
   // 🔐 Redirect ONLY if explicitly unauthenticated
   if (user === null) {

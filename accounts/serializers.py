@@ -39,7 +39,6 @@ class RegisterSerializer(serializers.ModelSerializer):
             is_verified=True,
         )
 
-
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
@@ -48,7 +47,8 @@ class LoginSerializer(serializers.Serializer):
         email = attrs.get("email", "").lower().strip()
         password = attrs.get("password", "")
 
-        user = authenticate(email=email, password=password)
+        # ✅ correct authenticate call
+        user = authenticate(username=email, password=password)
 
         if not user:
             raise serializers.ValidationError("Invalid email or password")

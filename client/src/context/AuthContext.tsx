@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import api from "@/api/axios";
+import { queryClient } from "@/lib/queryClient";
 
 type User = {
   id: number;
@@ -15,60 +16,67 @@ type AuthContextType = {
   login: (email: string, password: string) => Promise<void>;
   googleLogin: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  // 🔑 IMPORTANT: undefined = not checked yet
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [, setLocation] = useLocation();
 
-  // Restore session ONCE
+  const refreshUser = async () => {
+    try {
+      const res = await api.get("/auth/me/");
+      setUser(res.data.user ?? null);
+    } catch {
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Restore session once
   useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      try {
-        const res = await api.get("/auth/me/");
-        if (mounted) {
-          setUser(res.data.user ?? null);
-        }
-      } catch {
-        if (mounted) {
-          setUser(null);
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
+    refreshUser();
   }, []);
 
   const login = async (email: string, password: string) => {
     const res = await api.post("/auth/login/", { email, password });
     setUser(res.data.user);
+
+    // ✅ refresh cached API after login
+    queryClient.clear();
   };
 
   const googleLogin = async (idToken: string) => {
     const res = await api.post("/auth/google-login/", { id_token: idToken });
     setUser(res.data.user);
+
+    // ✅ refresh cached API after login
+    queryClient.clear();
   };
 
   const logout = async () => {
-    await api.post("/auth/logout/");
+    try {
+      await api.post("/auth/logout/");
+    } catch {
+      // ignore error (still clear frontend)
+    }
+
+    // ✅ Clear everything
     setUser(null);
+    queryClient.clear();
+
+    // ✅ Redirect
     setLocation("/login");
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, googleLogin, logout }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, googleLogin, logout, refreshUser }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -76,8 +84,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }
