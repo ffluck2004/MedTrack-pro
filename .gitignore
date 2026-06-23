@@ -21,3 +21,6 @@ venv/
 
 # Local
 .local/
+
+# Client env (inside src directory)
+client/src/.env

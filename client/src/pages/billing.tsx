@@ -265,8 +265,8 @@ export default function Billing(): JSX.Element {
             await Promise.all([refetchMedicines(), refetchInvoices()]);
 
             // ⭐ ADDED — trigger dashboard refresh
-            queryClient.invalidateQueries(["medicines"]);
-            queryClient.invalidateQueries(["invoices"]);
+            queryClient.invalidateQueries({ queryKey: ["medicines"] });
+            queryClient.invalidateQueries({ queryKey: ["invoices"] });
           }}
         />
       ) : (

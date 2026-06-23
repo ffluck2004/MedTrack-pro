@@ -1,8 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Supplier, insertSupplierSchema } from "@shared/schema";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,183 +17,116 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Search, Plus, Edit, Trash2, Truck } from "lucide-react";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
+import { Search, Plus, Edit, Trash2 } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Suppliers() {
-  const { toast } = useToast();
-  const [searchTerm, setSearchTerm] = useState("");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingSupplier, setEditingSupplier] =
-    useState<Supplier | null>(null);
+  const queryClient = useQueryClient();
 
-  /* ---------------- Query ---------------- */
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [touched, setTouched] = useState(false);
 
-  const { data: suppliers = [], isLoading } =
-    useQuery<Supplier[]>({
-      queryKey: ["/api/suppliers"],
-      // FIX: React Query v5 requires explicit queryFn
-      queryFn: async () =>
-        apiRequest("GET", "/api/suppliers"),
-    });
-
-  /* ---------------- Form ---------------- */
-
-  const form = useForm({
-    resolver: zodResolver(insertSupplierSchema),
-    defaultValues: {
-      name: "",
-      contactPerson: "",
-      phone: "",
-      email: "",
-    },
+  const [form, setForm] = useState({
+    name: "",
+    contact: "",
+    email: "",
+    address: "",
+    gst_number: "",
   });
 
-  /* ---------------- Mutations ---------------- */
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ["suppliers"],
+    queryFn: () => apiRequest("GET", "suppliers/"),
+  });
 
   const createMutation = useMutation({
-    mutationFn: async (data: any) =>
-      apiRequest("POST", "/api/suppliers", data),
+    mutationFn: (data: any) =>
+      apiRequest("POST", "suppliers/", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/suppliers"],
-      });
-      setIsDialogOpen(false);
-      form.reset();
-      toast({
-        title: "Success",
-        description: "Supplier added successfully",
-      });
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      closeDialog();
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: string;
-      data: any;
-    }) =>
-      apiRequest(
-        "PATCH",
-        `/api/suppliers/${id}`,
-        data
-      ),
+    mutationFn: ({ id, data }: any) =>
+      apiRequest("PATCH", `suppliers/${id}/`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/suppliers"],
-      });
-      setIsDialogOpen(false);
-      setEditingSupplier(null);
-      form.reset();
-      toast({
-        title: "Success",
-        description: "Supplier updated successfully",
-      });
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      closeDialog();
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) =>
-      apiRequest(
-        "DELETE",
-        `/api/suppliers/${id}`,
-        {}
-      ),
+    mutationFn: (id: number) =>
+      apiRequest("DELETE", `suppliers/${id}/`),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/suppliers"],
-      });
-      toast({
-        title: "Success",
-        description: "Supplier deleted successfully",
-      });
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
     },
   });
 
-  /* ---------------- Derived Data ---------------- */
+  const closeDialog = () => {
+    setOpen(false);
+    setEditing(null);
+    setTouched(false);
+    setForm({
+      name: "",
+      contact: "",
+      email: "",
+      address: "",
+      gst_number: "",
+    });
+  };
 
-  const filteredSuppliers = suppliers.filter(
-    (s) =>
-      s.name
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
-      s.contactPerson
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
-      s.email
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase())
-  );
-
-  /* ---------------- Handlers ---------------- */
-
-  const handleOpenDialog = (supplier?: Supplier) => {
+  const openDialog = (supplier?: any) => {
     if (supplier) {
-      setEditingSupplier(supplier);
-      form.reset(supplier);
-    } else {
-      setEditingSupplier(null);
-      form.reset({
-        name: "",
-        contactPerson: "",
-        phone: "",
-        email: "",
-      });
+      setEditing(supplier);
+      setForm(supplier);
     }
-    setIsDialogOpen(true);
+    setOpen(true);
   };
 
-  const onSubmit = (data: any) => {
-    if (editingSupplier) {
-      updateMutation.mutate({
-        id: editingSupplier.id,
-        data,
-      });
-    } else {
-      createMutation.mutate(data);
-    }
-  };
+  const errors: any = {};
 
-  /* ---------------- Loading ---------------- */
+  if (touched) {
+    if (!form.name.trim()) errors.name = "Company name required";
 
-  if (isLoading) {
-    return (
-      <div className="flex h-96 items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-r-transparent" />
-          <p className="mt-4 text-sm text-muted-foreground">
-            Loading suppliers...
-          </p>
-        </div>
-      </div>
-    );
+    if (!form.contact.trim())
+      errors.contact = "Phone required";
+    else if (!/^[0-9]{10}$/.test(form.contact))
+      errors.contact = "Phone must be 10 digits";
+
+    if (!form.email.trim())
+      errors.email = "Email required";
+    else if (!/\S+@\S+\.\S+/.test(form.email))
+      errors.email = "Invalid email";
+
+    if (form.gst_number && !/^[A-Za-z0-9]{15}$/.test(form.gst_number))
+      errors.gst_number = "GST must be 15 characters";
   }
 
-  /* ---------------- UI ---------------- */
+  const handleSubmit = () => {
+    setTouched(true);
+    if (Object.keys(errors).length > 0) return;
+
+    if (editing) {
+      updateMutation.mutate({ id: editing.id, data: form });
+    } else {
+      createMutation.mutate(form);
+    }
+  };
+
+  const filtered = suppliers.filter((s: any) =>
+    s.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold text-foreground">
-            Suppliers
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage supplier information
-          </p>
-        </div>
-        <Button onClick={() => handleOpenDialog()}>
+      <div className="flex justify-between">
+        <h1 className="text-3xl font-semibold">Suppliers</h1>
+        <Button onClick={() => openDialog()}>
           <Plus className="mr-2 h-4 w-4" />
           Add Supplier
         </Button>
@@ -204,200 +134,147 @@ export default function Suppliers() {
 
       <Card>
         <CardContent className="p-6">
-          <div className="relative mb-6">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search suppliers..."
-              value={searchTerm}
-              onChange={(e) =>
-                setSearchTerm(e.target.value)
-              }
-              className="pl-10"
-            />
-          </div>
+          <Input
+            placeholder="Search supplier..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="mb-4"
+          />
 
-          {filteredSuppliers.length === 0 ? (
-            <div className="py-12 text-center">
-              <Truck className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-              <h3 className="text-lg font-medium text-foreground">
-                No suppliers found
-              </h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {suppliers.length === 0
-                  ? "Add your first supplier to get started"
-                  : "Try adjusting your search"}
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      Company Name
-                    </TableHead>
-                    <TableHead>
-                      Contact Person
-                    </TableHead>
-                    <TableHead>
-                      Phone
-                    </TableHead>
-                    <TableHead>
-                      Email
-                    </TableHead>
-                    <TableHead className="text-right">
-                      Actions
-                    </TableHead>
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Company</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>GST</TableHead>
+                  <TableHead>Address</TableHead>
+                  <TableHead className="text-right">
+                    Actions
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+
+              <TableBody>
+                {filtered.map((s: any) => (
+                  <TableRow key={s.id}>
+                    <TableCell>{s.name}</TableCell>
+                    <TableCell>{s.contact}</TableCell>
+                    <TableCell>{s.email}</TableCell>
+                    <TableCell>{s.gst_number}</TableCell>
+                    <TableCell>{s.address}</TableCell>
+                    <TableCell className="text-right space-x-2">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => openDialog(s)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() =>
+                          deleteMutation.mutate(s.id)
+                        }
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredSuppliers.map((supplier) => (
-                    <TableRow key={supplier.id}>
-                      <TableCell className="font-medium">
-                        {supplier.name}
-                      </TableCell>
-                      <TableCell>
-                        {supplier.contactPerson}
-                      </TableCell>
-                      <TableCell className="font-mono">
-                        {supplier.phone}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {supplier.email}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() =>
-                              handleOpenDialog(supplier)
-                            }
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() =>
-                              deleteMutation.mutate(
-                                supplier.id
-                              )
-                            }
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
-      <Dialog
-        open={isDialogOpen}
-        onOpenChange={setIsDialogOpen}
-      >
+      <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {editingSupplier
-                ? "Edit Supplier"
-                : "Add New Supplier"}
+              {editing ? "Edit Supplier" : "Add Supplier"}
             </DialogTitle>
           </DialogHeader>
 
-          <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(onSubmit)}
-              className="space-y-4"
-            >
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Company Name *
-                    </FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <div className="space-y-3">
+            <Input
+              placeholder="Company Name"
+              value={form.name}
+              onChange={(e) =>
+                setForm({ ...form, name: e.target.value })
+              }
+              className={errors.name ? "border-red-500" : ""}
+            />
+            {errors.name && (
+              <p className="text-red-500 text-sm">
+                {errors.name}
+              </p>
+            )}
 
-              <FormField
-                control={form.control}
-                name="contactPerson"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Contact Person *
-                    </FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <Input
+              placeholder="Phone (10 digits)"
+              value={form.contact}
+              onChange={(e) =>
+                setForm({ ...form, contact: e.target.value })
+              }
+              className={errors.contact ? "border-red-500" : ""}
+            />
+            {errors.contact && (
+              <p className="text-red-500 text-sm">
+                {errors.contact}
+              </p>
+            )}
 
-              <FormField
-                control={form.control}
-                name="phone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Phone *</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <Input
+              placeholder="Email"
+              value={form.email}
+              onChange={(e) =>
+                setForm({ ...form, email: e.target.value })
+              }
+              className={errors.email ? "border-red-500" : ""}
+            />
+            {errors.email && (
+              <p className="text-red-500 text-sm">
+                {errors.email}
+              </p>
+            )}
 
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email *</FormLabel>
-                    <FormControl>
-                      <Input type="email" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <Input
+              placeholder="GST (15 characters)"
+              value={form.gst_number}
+              onChange={(e) =>
+                setForm({ ...form, gst_number: e.target.value })
+              }
+              className={
+                errors.gst_number ? "border-red-500" : ""
+              }
+            />
+            {errors.gst_number && (
+              <p className="text-red-500 text-sm">
+                {errors.gst_number}
+              </p>
+            )}
 
-              <div className="flex justify-end gap-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() =>
-                    setIsDialogOpen(false)
-                  }
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={
-                    createMutation.isPending ||
-                    updateMutation.isPending
-                  }
-                >
-                  {editingSupplier ? "Update" : "Add"}
-                </Button>
-              </div>
-            </form>
-          </Form>
+            <Input
+              placeholder="Address"
+              value={form.address}
+              onChange={(e) =>
+                setForm({ ...form, address: e.target.value })
+              }
+            />
+
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={closeDialog}>
+                Cancel
+              </Button>
+              <Button onClick={handleSubmit}>
+                {editing ? "Update" : "Add"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

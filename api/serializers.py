@@ -1,33 +1,58 @@
 from rest_framework import serializers
 from .models import (
-    Supplier, Customer, Medicine, InventoryItem,
-    PurchaseOrder, Invoice, InvoiceItem, Report
+    Supplier,
+    Customer,
+    Medicine,
+    InventoryItem,
+    PurchaseOrder,
+    Invoice,
+    InvoiceItem,
+    Report,
 )
+
+# --------------------------------------------------
+# BASIC SERIALIZERS
+# --------------------------------------------------
 
 class SupplierSerializer(serializers.ModelSerializer):
     class Meta:
         model = Supplier
         fields = "__all__"
 
+
 class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = "__all__"
 
+
 class MedicineSerializer(serializers.ModelSerializer):
+    supplier_name = serializers.CharField(source="supplier.name", read_only=True)
+
     class Meta:
         model = Medicine
         fields = "__all__"
 
+
 class InventoryItemSerializer(serializers.ModelSerializer):
+    medicine_name = serializers.CharField(source="medicine.name", read_only=True)
+
     class Meta:
         model = InventoryItem
         fields = "__all__"
 
+
 class PurchaseOrderSerializer(serializers.ModelSerializer):
+    supplier_name = serializers.CharField(source="supplier.name", read_only=True)
+
     class Meta:
         model = PurchaseOrder
         fields = "__all__"
+
+
+# --------------------------------------------------
+# INVOICE ITEM SERIALIZER
+# --------------------------------------------------
 
 class InvoiceItemSerializer(serializers.ModelSerializer):
     medicine_id = serializers.PrimaryKeyRelatedField(
@@ -35,7 +60,12 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
         source="medicine",
         write_only=True
     )
-    medicine_name = serializers.CharField(source="medicine.name", read_only=True)
+
+    medicine_name = serializers.CharField(
+        source="medicine.name",
+        read_only=True
+    )
+
     returned_quantity = serializers.IntegerField(read_only=True)
 
     class Meta:
@@ -50,6 +80,11 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
             "line_total",
             "returned_quantity",
         ]
+
+
+# --------------------------------------------------
+# INVOICE SERIALIZER
+# --------------------------------------------------
 
 class InvoiceSerializer(serializers.ModelSerializer):
     items = InvoiceItemSerializer(many=True)
@@ -79,43 +114,62 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "customer_phone",
             "customer_address",
         ]
+
         read_only_fields = ("returned_at",)
 
+    # CREATE INVOICE
     def create(self, validated_data):
         items_data = validated_data.pop("items", [])
+
         invoice = Invoice.objects.create(**validated_data)
 
-        for item_data in items_data:
-            InvoiceItem.objects.create(invoice=invoice, **item_data)
+        for item in items_data:
+            InvoiceItem.objects.create(
+                invoice=invoice,
+                **item
+            )
 
         return invoice
 
+    # UPDATE INVOICE
     def update(self, instance, validated_data):
         items_data = validated_data.pop("items", None)
 
-        for attr, val in validated_data.items():
-            setattr(instance, attr, val)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
 
         instance.save()
 
         if items_data is not None:
             instance.items.all().delete()
-            for item_data in items_data:
-                InvoiceItem.objects.create(invoice=instance, **item_data)
+
+            for item in items_data:
+                InvoiceItem.objects.create(
+                    invoice=instance,
+                    **item
+                )
 
         return instance
+
+
+# --------------------------------------------------
+# REPORT SERIALIZER
+# --------------------------------------------------
 
 class ReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = Report
         fields = "__all__"
 
-# -------------------
-# RETURN SERIALIZERS
-# -------------------
+
+# --------------------------------------------------
+# RETURN SYSTEM SERIALIZERS
+# --------------------------------------------------
+
 class ReturnItemSerializer(serializers.Serializer):
     invoice_item_id = serializers.IntegerField()
     quantity = serializers.IntegerField(min_value=1)
+
 
 class ReturnSerializer(serializers.Serializer):
     items = ReturnItemSerializer(many=True)

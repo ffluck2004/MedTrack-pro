@@ -193,10 +193,7 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <SmallChip label="Today" />
-            <SmallChip label="30d" active />
-          </div>
+
         </div>
 
         {/* KPI COLOR CARDS */}

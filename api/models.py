@@ -69,14 +69,14 @@ class InventoryItem(models.Model):
         return f"{self.medicine.name} - {self.quantity}"
 
 
-class PurchaseOrder(models.Model):
-    order_number = models.CharField(max_length=100, unique=True)
-    supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True)
-    created_at = models.DateTimeField(default=timezone.now)
-    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+# class PurchaseOrder(models.Model):
+#     order_number = models.CharField(max_length=100, unique=True)
+#     supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True)
+#     created_at = models.DateTimeField(default=timezone.now)
+#     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
-    def __str__(self):
-        return f"Order #{self.order_number}"
+#     def __str__(self):
+#         return f"Order #{self.order_number}"
 
 
 class Invoice(models.Model):
@@ -118,3 +118,24 @@ class Report(models.Model):
 
     def __str__(self):
         return self.title
+class PurchaseOrder(models.Model):
+
+    STATUS_CHOICES = [
+        ("Draft", "Draft"),
+        ("Sent", "Sent"),
+        ("Approved", "Approved"),
+        ("Received", "Received"),
+        ("Completed", "Completed"),
+        ("Cancelled", "Cancelled"),
+    ]
+
+    order_number = models.CharField(max_length=100, unique=True)
+    supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="Draft"
+    )

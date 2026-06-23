@@ -92,7 +92,7 @@ export default function Settings() {
               Platform
             </span>
             <span className="text-sm text-muted-foreground">
-              Replit
+              Web
             </span>
           </div>
         </CardContent>
