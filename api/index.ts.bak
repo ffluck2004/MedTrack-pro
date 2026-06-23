@@ -3,7 +3,6 @@ import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
 import { GoogleGenAI } from "@google/genai";
-import { OAuth2Client } from "google-auth-library";
 
 /* ================= TYPES (mirror of @shared/schema) ================= */
 
@@ -199,13 +198,6 @@ function getAI(): GoogleGenAI {
   return aiClient;
 }
 
-/* ================= GOOGLE OAUTH ================= */
-
-const GOOGLE_OAUTH_CLIENT_ID =
-  process.env.GOOGLE_CLIENT_ID ||
-  "371449211399-59bpqpbu0b19lp0lp08i2pbf34t4f13c.apps.googleusercontent.com";
-const authClient = new OAuth2Client(GOOGLE_OAUTH_CLIENT_ID);
-
 /* ================= EXPRESS APP ================= */
 
 const app = express();
@@ -392,60 +384,6 @@ app.post("/api/chat", async (req, res) => {
     console.error("Chat error:", err);
     res.status(500).json({ error: "Failed to process chat message" });
   }
-});
-
-/* ================= AUTH ================= */
-
-// In-memory session store for users logged in via Google
-const userSessions = new Map<string, { email: string; name: string; picture: string; createdAt: Date }>();
-
-app.post("/api/auth/google-login/", async (req, res) => {
-  try {
-    const { id_token } = req.body;
-    if (!id_token) {
-      return res.status(400).json({ error: "Missing id_token" });
-    }
-
-    // Verify the ID token with Google
-    const ticket = await authClient.verifyIdToken({
-      idToken: id_token,
-      audience: GOOGLE_OAUTH_CLIENT_ID,
-    });
-
-    const payload = ticket.getPayload();
-    if (!payload || !payload.email) {
-      return res.status(400).json({ error: "Invalid Google token" });
-    }
-
-    // Create or retrieve user session
-    const userId = payload.sub;
-    if (!userSessions.has(userId)) {
-      userSessions.set(userId, {
-        email: payload.email!,
-        name: payload.name || payload.email!,
-        picture: payload.picture || "",
-        createdAt: new Date(),
-      });
-    }
-
-    const user = userSessions.get(userId)!;
-
-    res.json({
-      user: {
-        id: userId,
-        email: user.email,
-        username: user.name,
-        role: "STAFF",
-      },
-    });
-  } catch (err) {
-    console.error("Google login error:", err);
-    res.status(401).json({ error: "Google authentication failed" });
-  }
-});
-
-app.get("/api/auth/me/", (req, res) => {
-  res.json({ user: null });
 });
 
 /* ================= STATIC FILES ================= */

@@ -8,12 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "CHANGE_THIS_SECRET_KEY"
 DEBUG = True
 
-ALLOWED_HOSTS = [
-    "127.0.0.1",
-    "localhost",
-    ".vercel.app",            # ← allows all Vercel deployment URLs and custom domains
-    "med-track-pro.vercel.app",
-]
+ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 
 INSTALLED_APPS = [
     "corsheaders",  # must be above django.middleware
@@ -92,10 +87,7 @@ REST_FRAMEWORK = {
 # ---------------------------
 # Google OAuth client id (used server-side if needed)
 # ---------------------------
-GOOGLE_CLIENT_ID = os.environ.get(
-    "GOOGLE_CLIENT_ID",
-    "371449211399-59bpqpbu0b19lp0lp08i2pbf34t4f13c.apps.googleusercontent.com",
-)
+GOOGLE_CLIENT_ID = "371449211399-59bpqpbu0b19lp0lp08i2pbf34t4f13c.apps.googleusercontent.com"
 
 # ---------------------------
 # CORS / CSRF / SESSION (DEV local)
@@ -106,14 +98,6 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
     "http://localhost:5000",
     "http://127.0.0.1:5000",
-    # Production – Vercel
-    "https://med-track-pro.vercel.app",
-    "https://med-track-knrnrpe6j-ffluck2004s-projects.vercel.app",
-]
-
-# Allow any Vercel preview deployment origin via regex
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https://med-track-.*-ffluck2004s-projects\.vercel\.app$",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -124,19 +108,16 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:5173",
     "http://localhost:5000",
     "http://127.0.0.1:5000",
-    # Production – Vercel
-    "https://med-track-pro.vercel.app",
-    "https://med-track-knrnrpe6j-ffluck2004s-projects.vercel.app",
 ]
 
-# Session / cookie policy — auto-secure when DEBUG=False (production)
+# Session / cookie policy (dev)
 SESSION_COOKIE_SAMESITE = "Lax"
-SESSION_COOKIE_SECURE = not DEBUG     # True in production (HTTPS), False in dev (HTTP)
+SESSION_COOKIE_SECURE = False     # True in production (HTTPS)
 SESSION_COOKIE_HTTPONLY = True
 
 CSRF_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_SECURE = not DEBUG        # True in production, False in dev
-CSRF_COOKIE_HTTPONLY = False          # must be readable by JS if you read token from cookie
+CSRF_COOKIE_SECURE = False        # True in production
+CSRF_COOKIE_HTTPONLY = False      # must be readable by JS if you read token from cookie
 
 # Optional: cookie lifetime for session (default Django session expiry works fine)
 # SESSION_COOKIE_AGE = 7 * 24 * 60 * 60
