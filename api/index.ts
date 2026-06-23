@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { randomUUID } from "crypto";
+import { randomUUID, randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { GoogleGenAI } from "@google/genai";
 import { OAuth2Client } from "google-auth-library";
 
@@ -394,10 +394,77 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
+/* ================= PASSWORD HELPERS ================= */
+
+interface StoredUser {
+  id: string;
+  email: string;
+  username: string;
+  passwordHash: string;
+  salt: string;
+  role: string;
+  createdAt: Date;
+}
+
+function hashPassword(password: string, salt?: string): { hash: string; salt: string } {
+  const s = salt || randomBytes(16).toString("hex");
+  const hash = scryptSync(password, s, 64).toString("hex");
+  return { hash, salt: s };
+}
+
+function verifyPassword(password: string, hash: string, salt: string): boolean {
+  const { hash: computed } = hashPassword(password, salt);
+  return timingSafeEqual(Buffer.from(computed), Buffer.from(hash));
+}
+
+/* ================= USER STORE ================= */
+
+const users = new Map<string, StoredUser>();
+
 /* ================= AUTH ================= */
 
 // In-memory session store for users logged in via Google
 const userSessions = new Map<string, { email: string; name: string; picture: string; createdAt: Date }>();
+
+app.post("/api/auth/register/", async (req, res) => {
+  try {
+    const { email, username, password } = req.body;
+    if (!email || !username || !password) {
+      return res.status(400).json({ error: "email, username, and password are required" });
+    }
+    if (Array.from(users.values()).some((u) => u.email === email.toLowerCase())) {
+      return res.status(409).json({ error: "A user with this email already exists" });
+    }
+    const id = randomUUID();
+    const { hash, salt } = hashPassword(password);
+    users.set(id, { id, email: email.toLowerCase(), username, passwordHash: hash, salt, role: "STAFF", createdAt: new Date() });
+    res.status(201).json({ message: "Account created" });
+  } catch (err) {
+    console.error("Register error:", err);
+    res.status(500).json({ error: "Registration failed" });
+  }
+});
+
+app.post("/api/auth/login/", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: "email and password are required" });
+    }
+    const user = Array.from(users.values()).find((u) => u.email === email.toLowerCase());
+    if (!user || !verifyPassword(password, user.passwordHash, user.salt)) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+    res.json({ user: { id: user.id, email: user.email, username: user.username, role: user.role } });
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ error: "Login failed" });
+  }
+});
+
+app.post("/api/auth/logout/", (_req, res) => {
+  res.json({ message: "Logged out" });
+});
 
 app.post("/api/auth/google-login/", async (req, res) => {
   try {
