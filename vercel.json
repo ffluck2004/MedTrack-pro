@@ -1,8 +1,11 @@
 {
   "version": 2,
+  "framework": null,
   "buildCommand": "npm run build",
+  "outputDirectory": "dist/public",
   "installCommand": "npm install",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api" }
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

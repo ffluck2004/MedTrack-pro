@@ -3,9 +3,15 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+let ai: GoogleGenAI | null = null;
+function getAI(): GoogleGenAI {
+  if (!ai) {
+    ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+  }
+  return ai;
+}
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export async function registerRoutes(app: Express, createHttp: boolean = true): Promise<Server | null> {
   // Medicines endpoints
   app.get("/api/medicines", async (req, res) => {
     try {
@@ -266,7 +272,7 @@ ${medicineContext}`;
 
       const prompt = `${systemPrompt}\n\nUser question: ${message}`;
 
-      const response = await ai.models.generateContent({
+      const response = await getAI().models.generateContent({
         model: "gemini-2.0-flash-exp",
         contents: prompt,
       });
@@ -280,7 +286,9 @@ ${medicineContext}`;
     }
   });
 
-  const httpServer = createServer(app);
-
-  return httpServer;
+  if (createHttp) {
+    const httpServer = createServer(app);
+    return httpServer;
+  }
+  return null;
 }
