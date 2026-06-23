@@ -100,7 +100,7 @@ export default function AddMedicine() {
   const { data: medicine } = useQuery<Medicine>({
     queryKey: ["medicines", params?.id],
     queryFn: async () => {
-      const res = await fetch(`http://127.0.0.1:8000/api/medicines/${params?.id}/`);
+      const res = await fetch(`${import.meta.env.VITE_API_BASE || "/api"}/medicines/${params?.id}/`);
       if (!res.ok) throw new Error("Failed to fetch medicine");
       return res.json();
     },

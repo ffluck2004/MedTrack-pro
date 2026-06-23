@@ -1,7 +1,7 @@
 // /src/lib/queryClient.ts
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-const API_BASE = "http://127.0.0.1:8000/api"; // Django API
+const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {

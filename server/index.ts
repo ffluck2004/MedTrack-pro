@@ -1,33 +1,7 @@
 // server/index.ts
-import express from "express";
+import express, { type Express } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-
-const app = express();
-
-/* ================= CSP (SAFE & WORKING) ================= */
-
-app.use((req, res, next) => {
-  const isDev = app.get("env") === "development";
-
-  const csp = [
-    "default-src 'self'",
-    isDev
-      ? "script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com"
-      : "script-src 'self' https://accounts.google.com https://apis.google.com",
-    "frame-src https://accounts.google.com",
-    // "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com",
-    "connect-src 'self' http://127.0.0.1:8000 https://accounts.google.com https://oauth2.googleapis.com",
-    "img-src 'self' data: https:",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
-    "font-src 'self' https://fonts.gstatic.com",
-  ].join("; ");
-
-  res.setHeader("Content-Security-Policy", csp);
-  next();
-});
-
-/* ================= BODY PARSING ================= */
 
 declare module "http" {
   interface IncomingMessage {
@@ -35,34 +9,65 @@ declare module "http" {
   }
 }
 
-app.use(
-  express.json({
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
-    },
-  })
-);
-app.use(express.urlencoded({ extended: false }));
+export async function createApp(): Promise<Express> {
+  const app = express();
 
-/* ================= BOOTSTRAP ================= */
+  /* ================= CSP (SAFE & WORKING) ================= */
 
-(async () => {
-  // 🔥🔥🔥 MOST IMPORTANT LINE 🔥🔥🔥
-  // Register API routes FIRST
-  const server = await registerRoutes(app);
+  app.use((req, res, next) => {
+    const isDev = app.get("env") === "development";
 
-  // 🔒 NEVER let Vite touch /api
-  // app.use("/api", (_req, _res, next) => next());
+    const csp = [
+      "default-src 'self'",
+      isDev
+        ? "script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com"
+        : "script-src 'self' https://accounts.google.com https://apis.google.com",
+      "frame-src https://accounts.google.com",
+      "connect-src 'self' http://127.0.0.1:8000 https://accounts.google.com https://oauth2.googleapis.com",
+      "img-src 'self' data: https:",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
+      "font-src 'self' https://fonts.gstatic.com",
+    ].join("; ");
 
-  // Frontend handling AFTER API
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
-  }
-
-  const port = 5000;
-  server.listen(port, "localhost", () => {
-    log(`✅ Server running on http://localhost:${port}`);
+    res.setHeader("Content-Security-Policy", csp);
+    next();
   });
-})();
+
+  /* ================= BODY PARSING ================= */
+
+  app.use(
+    express.json({
+      verify: (req, _res, buf) => {
+        req.rawBody = buf;
+      },
+    })
+  );
+  app.use(express.urlencoded({ extended: false }));
+
+  // Register API routes
+  await registerRoutes(app);
+
+  // Frontend static serving (production)
+  serveStatic(app);
+
+  return app;
+}
+
+/* ================= LOCAL DEVELOPMENT BOOTSTRAP ================= */
+
+if (process.env.VERCEL !== "1") {
+  (async () => {
+    const app = await createApp();
+    const { createServer } = await import("http");
+    const server = createServer(app);
+
+    if (app.get("env") === "development") {
+      await setupVite(app, server);
+    }
+
+    const port = parseInt(process.env.PORT || "5000", 10);
+    server.listen(port, "0.0.0.0", () => {
+      log(`✅ Server running on http://0.0.0.0:${port}`);
+    });
+  })();
+}
