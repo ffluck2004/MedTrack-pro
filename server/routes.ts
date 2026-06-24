@@ -1,5 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { randomUUID } from "crypto";
+import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
 
@@ -283,6 +285,140 @@ ${medicineContext}`;
     } catch (error) {
       console.error("Chat error:", error);
       res.status(500).json({ error: "Failed to process chat message" });
+    }
+  });
+
+  /* ================= AUTH (LOCAL DEV) ================= */
+
+  interface StoredUser {
+    id: string;
+    email: string;
+    username: string;
+    passwordHash: string;
+    salt: string;
+    role: string;
+    createdAt: Date;
+  }
+
+  const users = new Map<string, StoredUser>();
+
+  function hashPassword(password: string): { hash: string; salt: string } {
+    const salt = randomBytes(16).toString("hex");
+    const hash = scryptSync(password, salt, 64).toString("hex");
+    return { hash, salt };
+  }
+
+  function verifyPassword(password: string, hash: string, salt: string): boolean {
+    const derivedHash = scryptSync(password, salt, 64).toString("hex");
+    return derivedHash === hash;
+  }
+
+  // Seed demo user
+  const DEMO_EMAIL = "demo@medtrackpro.com";
+  const DEMO_PASSWORD = "Demo@123";
+  (() => {
+    const { hash, salt } = hashPassword(DEMO_PASSWORD);
+    users.set("demo-user-id", { id: "demo-user-id", email: "demo@medtrackpro.com", username: "Demo Admin", passwordHash: hash, salt, role: "STAFF", createdAt: new Date() });
+  })();
+
+  // In-memory session store
+  // In-memory session store
+  const sessions = new Map<string, { userId: string; email: string; username: string; role: string }>();
+
+  function setSessionCookie(res: any, sessionId: string) {
+    res.cookie("session_token", sessionId, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+  }
+
+  function clearSessionCookie(res: any) {
+    res.clearCookie("session_token", { path: "/" });
+  }
+
+  function getSessionUser(req: any): { userId: string; email: string; username: string; role: string } | null {
+    const token = req.cookies?.session_token;
+    if (!token) return null;
+    return sessions.get(token) || null;
+  }
+
+  app.post("/api/auth/register/", async (req, res) => {
+    try {
+      const { email, username, password } = req.body;
+      if (!email || !username || !password) {
+        return res.status(400).json({ error: "email, username, and password are required" });
+      }
+      if (Array.from(users.values()).some((u) => u.email === email.toLowerCase())) {
+        return res.status(409).json({ error: "A user with this email already exists" });
+      }
+      const id = randomUUID();
+      const { hash, salt } = hashPassword(password);
+      users.set(id, { id, email: email.toLowerCase(), username, passwordHash: hash, salt, role: "STAFF", createdAt: new Date() });
+      res.status(201).json({ message: "Account created" });
+    } catch (err) {
+      console.error("Register error:", err);
+      res.status(500).json({ error: "Registration failed" });
+    }
+  });
+
+  app.post("/api/auth/login/", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "email and password are required" });
+      }
+      const user = Array.from(users.values()).find((u) => u.email === email.toLowerCase());
+      if (!user || !verifyPassword(password, user.passwordHash, user.salt)) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+      const sessionId = randomUUID();
+      sessions.set(sessionId, { userId: user.id, email: user.email, username: user.username, role: user.role });
+      setSessionCookie(res, sessionId);
+      res.json({ user: { id: user.id, email: user.email, username: user.username, role: user.role } });
+    } catch (err) {
+      console.error("Login error:", err);
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  app.post("/api/auth/logout/", (req, res) => {
+    const token = req.cookies?.session_token;
+    if (token) sessions.delete(token);
+    clearSessionCookie(res);
+    res.json({ message: "Logged out" });
+  });
+
+  app.get("/api/auth/me/", (req, res) => {
+    const sessionUser = getSessionUser(req);
+    if (sessionUser) {
+      res.json({ user: { id: sessionUser.userId, email: sessionUser.email, username: sessionUser.username, role: sessionUser.role } });
+    } else {
+      res.json({ user: null });
+    }
+  });
+
+  app.post("/api/auth/google-login/", async (req, res) => {
+    try {
+      const { id_token } = req.body;
+      if (!id_token) {
+        return res.status(400).json({ error: "id_token is required" });
+      }
+      const { OAuth2Client } = await import("google-auth-library");
+      const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+      const ticket = await client.verifyIdToken({ idToken: id_token, audience: process.env.GOOGLE_CLIENT_ID });
+      const payload = ticket.getPayload();
+      if (!payload || !payload.email) {
+        return res.status(400).json({ error: "Invalid token payload" });
+      }
+      const sessionId = randomUUID();
+      sessions.set(sessionId, { userId: payload.sub, email: payload.email!, username: payload.name || payload.email!, role: "STAFF" });
+      setSessionCookie(res, sessionId);
+      res.json({ user: { id: payload.sub, email: payload.email, username: payload.name || payload.email, role: "STAFF" } });
+    } catch (err) {
+      console.error("Google login error:", err);
+      res.status(401).json({ error: "Google authentication failed" });
     }
   });
 

@@ -37,6 +37,19 @@ export default function Login() {
     }
   };
 
+  const handleDemoLogin = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      await login("demo@medtrackpro.com", "Demo@123");
+      setLocation("/dashboard");
+    } catch (err: any) {
+      setError("Demo login failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 via-white to-blue-100 flex items-center justify-center p-4">
       <div className="w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-xl border">
@@ -87,6 +100,21 @@ export default function Login() {
                 {loading ? "Signing in..." : "Login"}
               </Button>
             </form>
+
+            <div className="mt-6">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDemoLogin}
+                disabled={loading}
+                className="w-full rounded-lg border-emerald-400 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+              >
+                {loading ? "Signing in..." : "Try Demo Account"}
+              </Button>
+              <p className="mt-1 text-xs text-muted-foreground text-center">
+                Email: demo@medtrackpro.com &nbsp;•&nbsp; Password: Demo@123
+              </p>
+            </div>
 
             <div className="my-6 flex items-center gap-3">
               <div className="h-px flex-1 bg-slate-200" />

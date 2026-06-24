@@ -107,6 +107,21 @@ export default function Register() {
                             </Button>
                         </div>
 
+                        <div className="mt-6">
+                            <Link href="/login">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="w-full rounded-lg border-emerald-400 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                                >
+                                    Try Demo Account
+                                </Button>
+                            </Link>
+                            <p className="mt-1 text-xs text-muted-foreground text-center">
+                                Email: demo@medtrackpro.com &nbsp;•&nbsp; Password: Demo@123
+                            </p>
+                        </div>
+
                         <div className="my-6 flex items-center gap-3">
                             <div className="h-px flex-1 bg-slate-200" />
                             <p className="text-xs text-muted-foreground">OR</p>

@@ -1,5 +1,6 @@
 // server/index.ts
 import express, { type Express } from "express";
+import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
@@ -43,6 +44,7 @@ export async function createApp(): Promise<Express> {
     })
   );
   app.use(express.urlencoded({ extended: false }));
+  app.use(cookieParser());
 
   // Register API routes
   await registerRoutes(app);

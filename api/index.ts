@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { randomUUID, randomBytes, scryptSync, timingSafeEqual } from "crypto";
+import cookieParser from "cookie-parser";
 import { GoogleGenAI } from "@google/genai";
 import { OAuth2Client } from "google-auth-library";
 
@@ -212,7 +213,7 @@ const app = express();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-
+app.use(cookieParser());
 app.use((_req, res, next) => {
   res.setHeader(
     "Content-Security-Policy",
@@ -421,10 +422,37 @@ function verifyPassword(password: string, hash: string, salt: string): boolean {
 
 const users = new Map<string, StoredUser>();
 
+// ── Seed demo user for recruiter demo mode ──
+const DEMO_EMAIL = "demo@medtrackpro.com";
+const DEMO_PASSWORD = "Demo@123";
+(() => {
+  const { hash, salt } = hashPassword(DEMO_PASSWORD);
+  users.set("demo-user-id", { id: "demo-user-id", email: DEMO_EMAIL, username: "Demo Admin", passwordHash: hash, salt, role: "STAFF", createdAt: new Date() });
+})();
+
 /* ================= AUTH ================= */
 
-// In-memory session store for users logged in via Google
-const userSessions = new Map<string, { email: string; name: string; picture: string; createdAt: Date }>();
+// In-memory session store
+const sessions = new Map<string, { userId: string; email: string; username: string; role: string }>();
+
+function setSessionCookie(res: any, sessionId: string) {
+  res.cookie("session_token", sessionId, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+}
+
+function clearSessionCookie(res: any) {
+  res.clearCookie("session_token", { path: "/" });
+}
+
+function getSessionUser(req: express.Request): { userId: string; email: string; username: string; role: string } | null {
+  const token = req.cookies?.session_token;
+  if (!token) return null;
+  return sessions.get(token) || null;
+}
 
 app.post("/api/auth/register/", async (req, res) => {
   try {
@@ -455,6 +483,9 @@ app.post("/api/auth/login/", async (req, res) => {
     if (!user || !verifyPassword(password, user.passwordHash, user.salt)) {
       return res.status(401).json({ error: "Invalid email or password" });
     }
+    const sessionId = randomUUID();
+    sessions.set(sessionId, { userId: user.id, email: user.email, username: user.username, role: user.role });
+    setSessionCookie(res, sessionId);
     res.json({ user: { id: user.id, email: user.email, username: user.username, role: user.role } });
   } catch (err) {
     console.error("Login error:", err);
@@ -462,7 +493,10 @@ app.post("/api/auth/login/", async (req, res) => {
   }
 });
 
-app.post("/api/auth/logout/", (_req, res) => {
+app.post("/api/auth/logout/", (req, res) => {
+  const token = req.cookies?.session_token;
+  if (token) sessions.delete(token);
+  clearSessionCookie(res);
   res.json({ message: "Logged out" });
 });
 
@@ -485,23 +519,17 @@ app.post("/api/auth/google-login/", async (req, res) => {
     }
 
     // Create or retrieve user session
-    const userId = payload.sub;
-    if (!userSessions.has(userId)) {
-      userSessions.set(userId, {
-        email: payload.email!,
-        name: payload.name || payload.email!,
-        picture: payload.picture || "",
-        createdAt: new Date(),
-      });
-    }
-
-    const user = userSessions.get(userId)!;
+    const userEmail = payload.email;
+    const userName = payload.name || userEmail!;
+    const sessionId = randomUUID();
+    sessions.set(sessionId, { userId: payload.sub, email: userEmail!, username: userName, role: "STAFF" });
+    setSessionCookie(res, sessionId);
 
     res.json({
       user: {
-        id: userId,
-        email: user.email,
-        username: user.name,
+        id: payload.sub,
+        email: userEmail,
+        username: userName,
         role: "STAFF",
       },
     });
@@ -512,7 +540,12 @@ app.post("/api/auth/google-login/", async (req, res) => {
 });
 
 app.get("/api/auth/me/", (req, res) => {
-  res.json({ user: null });
+  const sessionUser = getSessionUser(req);
+  if (sessionUser) {
+    res.json({ user: { id: sessionUser.userId, email: sessionUser.email, username: sessionUser.username, role: sessionUser.role } });
+  } else {
+    res.json({ user: null });
+  }
 });
 
 /* ================= STATIC FILES ================= */
